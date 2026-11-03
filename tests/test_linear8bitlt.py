@@ -329,35 +329,38 @@ def test_linear8bitlt_torch_compile(device, threshold, bias, fullgraph, mode):
 
 
 @pytest.mark.parametrize("device", get_available_devices(no_cpu=True))
+@pytest.mark.parametrize("in_parent_module", TRUE_FALSE, ids=id_formatter("in_parent_module"))
 @pytest.mark.skipif(not get_available_devices(no_cpu=True), reason="No accelerator device")
-def test_linear8bitlt_device_movement(device):
+def test_linear8bitlt_device_movement(device, in_parent_module):
     """Test moving a Linear8bitLt layer between CPU and an accelerator device."""
 
     # Create a Linear8bitLt layer on CPU
     layer = bnb.nn.Linear8bitLt(32, 128, bias=False, has_fp16_weights=False)
     torch.nn.init.xavier_uniform_(layer.weight)
+    # .to() on a parent module reaches the layer only through nn.Module._apply().
+    model = torch.nn.Sequential(layer) if in_parent_module else layer
 
     # Create a sample input.
     x = torch.randn(4, 32, dtype=torch.float16, device="cpu")
 
     # Move to the device. This should quantize the weights.
-    layer = layer.to(device)
+    model = model.to(device)
     assert layer.weight.data.dtype == torch.int8
 
     # Call the layer on the accelerator device.
-    out_accelerator = layer(x.to(device))
+    out_accelerator = model(x.to(device))
 
     # Move back to CPU and call again.
-    layer = layer.to("cpu")
-    out_cpu = layer(x)
+    model = model.to("cpu")
+    out_cpu = model(x)
 
     # Move back to the accelerator device and call again.
-    layer = layer.to(device)
-    out_accelerator_2 = layer(x.to(device))
+    model = model.to(device)
+    out_accelerator_2 = model(x.to(device))
 
     # Move back to the CPU and call one last time.
-    layer = layer.to("cpu")
-    out_cpu_2 = layer(x)
+    model = model.to("cpu")
+    out_cpu_2 = model(x)
 
     # CPU outputs should match both times.
     torch.testing.assert_close(out_cpu_2, out_cpu, rtol=1e-8, atol=1e-8)

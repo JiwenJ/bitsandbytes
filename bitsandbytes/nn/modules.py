@@ -756,6 +756,14 @@ class Int8Params(torch.nn.Parameter):
     def xpu(self, device: Optional[int | device | str] = None, non_blocking: bool = False):
         return self.to(device="xpu" if device is None else device, non_blocking=non_blocking)
 
+    def _sync_stats_with_data(self):
+        # nn.Module._apply() moves a parameter with `param.data = fn(param)`: this object is kept, so the CB/SCB
+        # that Int8Params.to() attached to the returned parameter are lost. Redo that here on the new data.
+        if self.CB is not None and self.dtype == torch.int8:
+            self.CB = self.data
+        if self.SCB is not None and self.SCB.device.type != "meta":
+            self.SCB = self.SCB.to(self.device)
+
     def __deepcopy__(self, memo):
         # adjust this if new arguments are added to the constructor
         new_instance = type(self).__new__(
@@ -855,6 +863,12 @@ class Embedding8bit(nn.Embedding):
         self.dtype = self.weight.data.dtype
 
         self.weight = Int8Params(self.weight.data, has_fp16_weights=False, requires_grad=False)
+
+    def _apply(self, fn, recurse=True):
+        super()._apply(fn, recurse)
+        if isinstance(self.weight, Int8Params):
+            self.weight._sync_stats_with_data()
+        return self
 
     def _save_to_state_dict(self, destination, prefix, keep_vars):
         raise NotImplementedError("Saving Embedding8bit module is not implemented")
@@ -1162,20 +1176,25 @@ class Linear8bitLt(nn.Linear):
         self.weight.CB = None
         self.weight.SCB = None
 
-    def to(self, *args, **kwargs):
-        # Call the parent to() method to handle standard parameter/buffer movement
-        result = super().to(*args, **kwargs)
+    def _apply(self, fn, recurse=True):
+        # .to()/.cuda()/.cpu() on this layer or on any parent module end up here.
+        super()._apply(fn, recurse)
 
-        device, _, _, _ = torch._C._nn._parse_to(*args, **kwargs)
+        if isinstance(self.weight, Int8Params):
+            self.weight._sync_stats_with_data()
 
-        # Handle state tensors if needed.
-        if device is not None:
-            if result.state.CB is not None:
-                result.state.CB = result.state.CB.to(device)
-            if result.state.SCB is not None:
-                result.state.SCB = result.state.SCB.to(device)
+        # Keep the int8 state next to the weight. Without fp16 weights, state.CB is the weight data itself
+        # (forward() assigns it back to weight.data), so share it instead of keeping a second copy.
+        state, device = self.state, self.weight.device
+        if state.CB is not None:
+            if not state.has_fp16_weights and self.weight.dtype == torch.int8:
+                state.CB = self.weight.data
+            elif state.CB.device.type != "meta":
+                state.CB = state.CB.to(device)
+        if state.SCB is not None and state.SCB.device.type != "meta":
+            state.SCB = state.SCB.to(device)
 
-        return result
+        return self
 
     def forward(self, x: torch.Tensor):
         self.state.is_training = self.training

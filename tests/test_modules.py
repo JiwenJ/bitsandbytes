@@ -413,6 +413,29 @@ def test_embedding_error(device, embedding_class, input_shape, embedding_dim, qu
     )
 
 
+def test_8bit_modules_follow_parent_module_apply():
+    # .to()/.cuda()/.cpu() on a parent module reach the 8-bit layers only through nn.Module._apply(), which replaces
+    # weight.data in place. A copying fn makes this observable on CPU: CB/SCB have to follow the new weight data.
+    emb = bnb.nn.Embedding8bit(32, 64, dtype=torch.float16)
+    linear = bnb.nn.Linear8bitLt(64, 32, has_fp16_weights=False)
+    model = nn.Sequential(emb, linear).to("cpu")
+    tokens = torch.randint(0, 32, (4, 8))
+
+    # Before the first forward Linear8bitLt keeps CB/SCB on its weight.
+    model._apply(lambda t: t.clone())
+    assert emb.weight.CB.data_ptr() == emb.weight.data_ptr()
+    assert linear.weight.CB.data_ptr() == linear.weight.data_ptr()
+    out = model(tokens)
+
+    # After it they live in linear.state.
+    model._apply(lambda t: t.clone())
+    weight_ptr = linear.weight.data_ptr()
+    assert linear.state.CB.data_ptr() == weight_ptr
+    torch.testing.assert_close(model(tokens), out)
+    # forward() must not put the weight from before the move back.
+    assert linear.weight.data_ptr() == weight_ptr
+
+
 @pytest.mark.parametrize("device", get_available_devices())
 def test_4bit_linear_warnings(device, caplog):
     dim1 = 64
