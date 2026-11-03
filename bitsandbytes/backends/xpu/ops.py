@@ -234,6 +234,22 @@ if not isinstance(lib, ErrorHandlerMockBNBNativeLibrary):
         _dequantize_4bit_impl(A, absmax, blocksize, quant_type, dtype, out=out)
         return out
 
+    @register_kernel("bitsandbytes::dequantize_4bit.out", "xpu")
+    def _(
+        A: torch.Tensor,
+        absmax: torch.Tensor,
+        blocksize: int,
+        quant_type: str,
+        shape: Sequence[int],
+        dtype: torch.dtype,
+        out: torch.Tensor,
+    ) -> None:
+        if out.shape != tuple(shape):
+            raise ValueError(f"Expected out.shape == {shape}, got {out.shape}")
+        if out.dtype != dtype:
+            raise ValueError(f"Expected out.dtype == {dtype}, got {out.dtype}")
+        _dequantize_4bit_impl(A, absmax, blocksize, quant_type, dtype, out=out)
+
     @register_kernel("bitsandbytes::dequantize_blockwise", "xpu")
     def _(
         A: torch.Tensor, absmax: torch.Tensor, code: torch.Tensor, blocksize: int, dtype: torch.dtype
