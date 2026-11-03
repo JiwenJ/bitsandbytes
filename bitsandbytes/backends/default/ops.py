@@ -54,7 +54,7 @@ def _(
     row_stats = row_stats.reshape(-1).unsqueeze(-1)
     col_stats = col_stats.reshape(-1).unsqueeze(0)
 
-    out = A_calc * (row_stats * col_stats) * 6.200124e-05
+    out = A_calc * (row_stats * col_stats) * (1.0 / (127.0 * 127.0))
     if bias is not None:
         out += bias
 

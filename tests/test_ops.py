@@ -76,6 +76,20 @@ class TestLLMInt8Ops:
         opcheck(torch.ops.bitsandbytes.int8_mm_dequant, (A, row_stats, col_stats))
 
     @pytest.mark.parametrize("device", get_available_devices())
+    def test_int8_mm_dequant_values(self, device):
+        A = torch.randint(-128, 127, (64, 32), dtype=torch.int32, device=device)
+        row_stats = torch.rand(64, dtype=torch.float32, device=device) * 10
+        col_stats = torch.rand(32, dtype=torch.float32, device=device) * 10
+
+        out = torch.ops.bitsandbytes.int8_mm_dequant(A, row_stats, col_stats, dtype=torch.float32)
+
+        # Each operand was scaled by 127 / absmax, so the product is scaled by 1 / 127**2.
+        expected = A.double() * row_stats.double().unsqueeze(1) * col_stats.double() / (127 * 127)
+        # The CUDA kernel only produces float16 output.
+        tol = 1e-3 if device == "cuda" else 1e-6
+        torch.testing.assert_close(out, expected.float(), rtol=tol, atol=tol)
+
+    @pytest.mark.parametrize("device", get_available_devices())
     @pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16, torch.float32], ids=id_formatter("dtype"))
     @pytest.mark.parametrize("has_bias", TRUE_FALSE)
     def test_int8_scaled_mm(self, device, dtype, has_bias):
