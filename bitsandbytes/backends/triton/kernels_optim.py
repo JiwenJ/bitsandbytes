@@ -61,7 +61,7 @@ def _optimizer_precondition_2state_32bit(
     offsets = block_start_idx * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE * N_PER_TH)
     mask = offsets < n_elements
 
-    g_vals = tl.load(g_ptr + offsets, mask=mask, other=0.0)
+    g_vals = tl.load(g_ptr + offsets, mask=mask, other=0.0).to(tl.float32)
     s1_vals = tl.load(state1_ptr + offsets, mask=mask, other=0.0)
     s2_vals = tl.load(state2_ptr + offsets, mask=mask, other=0.0)
 
@@ -116,7 +116,7 @@ def _optimizer_precondition_1state_32bit(
     offsets = block_start_idx * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE * N_PER_TH)
     mask = offsets < n_elements
 
-    g_vals = tl.load(g_ptr + offsets, mask=mask, other=0.0)
+    g_vals = tl.load(g_ptr + offsets, mask=mask, other=0.0).to(tl.float32)
     s1_vals = tl.load(state1_ptr + offsets, mask=mask, other=0.0)
 
     g_vals = gnorm_scale * g_vals
