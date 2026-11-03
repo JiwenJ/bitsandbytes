@@ -97,10 +97,20 @@ class LARS8bit(Optimizer1State):
             min_8bit_size (`int`, defaults to 4096):
                 The minimum number of elements of the parameter tensors for 8-bit optimization.
             max_unorm (`float`, defaults to 0.02):
-                The maximum gradient norm.
+                The maximum update norm for trust-ratio clipping.
+                Note: This parameter is not supported in LARS8bit and must be left at the
+                default 0.02. The 8-bit blockwise update does not implement update-norm
+                clipping; it is honored by the 32-bit LARS / LARS32bit optimizers.
         """
         if momentum == 0:
             raise NotImplementedError("LARS without momentum is not supported!")
+
+        if max_unorm != 0.02:
+            # We allow the default value of 0.02 to maintain compatibility with the function
+            # signature, but the 8-bit blockwise update does not implement update-norm
+            # clipping, so any other value would be silently ignored.
+            raise ValueError("LARS8bit only supports max_unorm=0.02 (default value for compatibility)")
+
         super().__init__(
             "lars",
             params,

@@ -734,6 +734,54 @@ def test_lamb8bit_rejects_non_default_max_unorm():
     bnb.optim.LAMB8bit(p, max_unorm=1.0)
 
 
+def test_lars8bit_rejects_non_default_max_unorm():
+    # Same as LAMB8bit: the 8-bit blockwise update does not implement update-norm
+    # clipping, so a non-default max_unorm would be silently ignored; reject it instead.
+    p = [torch.nn.Parameter(torch.randn(8, 8))]
+    with pytest.raises(ValueError):
+        bnb.optim.LARS8bit(p, lr=0.01, momentum=0.9, max_unorm=0.5)
+    with pytest.raises(ValueError):
+        bnb.optim.LARS8bit(p, lr=0.01, momentum=0.9, max_unorm=0.0)
+    # default (max_unorm=0.02) still constructs
+    bnb.optim.LARS8bit(p, lr=0.01, momentum=0.9)
+
+
+@pytest.mark.parametrize(
+    "optim_factories",
+    [
+        (lambda p: bnb.optim.LAMB8bit(p), lambda p: bnb.optim.Adam8bit(p)),
+        (
+            lambda p: bnb.optim.LARS8bit(p, lr=0.01, momentum=0.9),
+            lambda p: bnb.optim.SGD8bit(p, lr=0.01, momentum=0.9),
+        ),
+    ],
+    ids=["LAMB8bit", "LARS8bit"],
+)
+@pytest.mark.parametrize("device", get_available_devices())
+def test_lamb_lars_8bit_step(optim_factories, device):
+    # LAMB8bit/LARS8bit run the 8-bit blockwise "lamb"/"lars" update, which the CUDA
+    # backend did not map to a kernel, so the first step on a parameter with
+    # numel >= min_8bit_size raised. Without update-norm clipping the 8-bit update is
+    # the Adam/momentum one, so the results must match Adam8bit/SGD8bit exactly.
+    optim_factory, reference_factory = optim_factories
+    p1 = torch.randn(64, 128, device=device) * 0.1
+    p2 = p1.clone()
+    p0 = p1.clone()
+    opt1 = optim_factory([p1])
+    opt2 = reference_factory([p2])
+
+    for _ in range(3):
+        g = torch.randn_like(p1) * 0.01
+        p1.grad = g.clone()
+        p2.grad = g.clone()
+        opt1.step()
+        opt2.step()
+
+    assert opt1.state[p1]["state1"].dtype == torch.uint8
+    assert not torch.equal(p1, p0)
+    torch.testing.assert_close(p1, p2, rtol=0, atol=0)
+
+
 def test_adagrad8bit_rejects_non_8_optim_bits():
     # optim_bits is ignored (Adagrad8bit always uses 8-bit); guard invalid values (relates to #1261).
     p = [torch.nn.Parameter(torch.randn(8, 8))]

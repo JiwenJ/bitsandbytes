@@ -1048,10 +1048,20 @@ str2optimizer8bit_blockwise = {
         lib.cadagrad_8bit_blockwise_grad_fp16,
         lib.cadagrad_8bit_blockwise_grad_bf16,
     ),
+    "lamb": (
+        lib.cadam_8bit_blockwise_grad_fp32,
+        lib.cadam_8bit_blockwise_grad_fp16,
+        lib.cadam_8bit_blockwise_grad_bf16,
+    ),
     "ademamix": (
         lib.cademamix_8bit_blockwise_grad_fp32,
         lib.cademamix_8bit_blockwise_grad_fp16,
         lib.cademamix_8bit_blockwise_grad_bf16,
+    ),
+    "lars": (
+        lib.cmomentum_8bit_blockwise_grad_fp32,
+        lib.cmomentum_8bit_blockwise_grad_fp16,
+        lib.cmomentum_8bit_blockwise_grad_bf16,
     ),
 }
 
