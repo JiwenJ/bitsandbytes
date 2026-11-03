@@ -175,6 +175,8 @@ class Test4bitBlockwiseQuantOps:
 
         assert packed.device == A.device
         assert absmax.device == A.device
+        assert packed.shape == ((A.numel() + 1) // 2, 1)
+        assert absmax.shape == (-(A.numel() // -blocksize),)
 
         # Dequantize back and verify shape is preserved
         out = torch.ops.bitsandbytes.dequantize_4bit(packed, absmax, blocksize, quant_type, shape, dtype)

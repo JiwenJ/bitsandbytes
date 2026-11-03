@@ -74,6 +74,10 @@ def quantize_4bit(
         raise ValueError(f"Blockwise 4bit quantization only supports 16/32-bit floats, but got {A.dtype}")
 
     n = A.numel()
+    # Output sizes of the other backends: one absmax per block and ceil(n / 2) packed bytes,
+    # rounded up to whole quant_storage elements. The padded buffers below always have room for that.
+    absmax_numel = -(n // -blocksize)
+    packed_bytes = -((n - n // 2) // -quant_storage.itemsize) * quant_storage.itemsize
 
     # Pad to next multiple of blocksize so the kernel always processes full blocks
     remainder = n % blocksize
@@ -92,10 +96,12 @@ def quantize_4bit(
         kernels_4bit.quantize_4bit_blockwise_triton(
             A, blocksize, quant_type, blocks, absmax, num_elements=n, quantized_out=out
         )
-    packed = out
+    # Drop the outputs that only belong to the padding.
+    absmax = absmax[:absmax_numel]
+    packed = out[:packed_bytes]
 
     if quant_storage != torch.uint8:
-        packed = out.squeeze().view(quant_storage).unsqueeze(1)
+        packed = packed.squeeze().view(quant_storage).unsqueeze(1)
 
     return packed, absmax.float()
 
