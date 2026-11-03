@@ -999,6 +999,9 @@ def _optimizer_update_2state_8bit_blockwise_triton_kernel(
     # 2. Load and dequantize tensors
     g = tl.load(g_ptr + offsets, mask=mask, other=0.0).to(tl.float32) * gnorm_scale
     p = tl.load(p_ptr + offsets, mask=mask, other=0.0).to(tl.float32)
+    # Like the CUDA kernel: elements with a NaN/Inf gradient get their states reset to zero and
+    # their parameter left unchanged, so they do not poison the absmax of the whole block.
+    finite = (g == g) & (tl.abs(g) != float("inf"))
 
     # 3. Optimizer-specific updates
     if OPTIMIZER_ID == 3:  # ADAM
@@ -1007,6 +1010,8 @@ def _optimizer_update_2state_8bit_blockwise_triton_kernel(
 
         s1 = s1 * beta1 + (1.0 - beta1) * g
         s2 = s2 * beta2 + (1.0 - beta2) * g * g
+        s1 = tl.where(finite, s1, 0.0)
+        s2 = tl.where(finite, s2, 0.0)
 
         # In torch=2.7 on XPU there is an issue with libdevice.pow, leading to an error.
         # For backwards compatibility we precompute the bias correction factors.
@@ -1022,7 +1027,7 @@ def _optimizer_update_2state_8bit_blockwise_triton_kernel(
         p -= (lr / bias_correction1) * (s1 / denom)
 
         # Store updated parameter
-        tl.store(p_ptr + offsets, p.to(p_ptr.dtype.element_ty), mask=mask)
+        tl.store(p_ptr + offsets, p.to(p_ptr.dtype.element_ty), mask=mask & finite)
 
         # Requantize and store states
         s1_codes, new_absmax1 = quantize_8bit_blockwise_kernel_util(s1, qmap1_ptr, 256, BLOCK_SIZE_N, N_PER_TH)
@@ -1049,6 +1054,9 @@ def _optimizer_update_2state_8bit_blockwise_triton_kernel(
         m1 = m1 * beta1 + (1.0 - beta1) * g
         m2 = m2 * beta3 + (1.0 - beta3) * g
         nu = nu * beta2 + (1.0 - beta2) * g * g
+        m1 = tl.where(finite, m1, 0.0)
+        m2 = tl.where(finite, m2, 0.0)
+        nu = tl.where(finite, nu, 0.0)
 
         # In torch=2.7 on XPU there is an issue with libdevice.pow, leading to an error.
         # For backwards compatibility we precompute the bias correction factors.
@@ -1065,7 +1073,7 @@ def _optimizer_update_2state_8bit_blockwise_triton_kernel(
         p -= lr * update
 
         # Store updated parameter
-        tl.store(p_ptr + offsets, p.to(p_ptr.dtype.element_ty), mask=mask)
+        tl.store(p_ptr + offsets, p.to(p_ptr.dtype.element_ty), mask=mask & finite)
 
         # Requantize and store all three states
         m1_codes, new_absmax_m1 = quantize_8bit_blockwise_kernel_util(m1, qmap1_ptr, 256, BLOCK_SIZE_N, N_PER_TH)
