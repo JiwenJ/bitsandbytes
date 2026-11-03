@@ -713,6 +713,23 @@ def test_lamb_max_unorm_changes_update():
     assert not torch.allclose(tight, loose)
 
 
+def test_pytorch_lars_without_momentum():
+    # PytorchLARS defaults to momentum=0, but `update` was only assigned in the momentum
+    # branch, so the first step raised UnboundLocalError. Without momentum it is SGD
+    # with the trust-ratio clipping of the update.
+    lr, max_unorm = 0.01, 0.02  # PytorchLARS defaults
+    p = torch.nn.Parameter(torch.randn(32, 32))
+    g = torch.randn(32, 32)
+    p0 = p.detach().clone()
+    opt = bnb.optim.PytorchLARS([p])
+    p.grad = g.clone()
+    opt.step()
+
+    update_scale = min(1.0, (max_unorm * p0.norm() / g.norm()).item())
+    assert update_scale < 1.0  # clipping is active for this setup
+    torch.testing.assert_close(p.detach(), p0 - lr * update_scale * g)
+
+
 def test_lamb8bit_rejects_amsgrad():
     # amsgrad is unused by the base optimizer; mirror the Adam8bit/AdamW8bit guard (relates to #1261).
     p = [torch.nn.Parameter(torch.randn(8, 8))]
