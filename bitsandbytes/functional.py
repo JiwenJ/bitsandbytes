@@ -1141,6 +1141,11 @@ def optimizer_update_32bit(
 
     param_norm = 0.0
     if max_unorm > 0.0:
+        if optimizer_name == "lion":
+            # Update-norm clipping is not implemented for Lion: the CUDA, default and Triton kernels
+            # sum the momentum instead of the squared sign update, after the update has been applied,
+            # and the CPU backend ignores max_unorm.
+            raise NotImplementedError("max_unorm > 0 is not supported for the Lion optimizer.")
         param_norm = torch.norm(p.data.float())
 
     is_on_gpu([g, p, state1, state2, unorm_vec])

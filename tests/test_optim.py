@@ -243,6 +243,19 @@ def test_optimizer32bit(dim1, dim2, gtype, optim_name, device):
             assert bnb_optimizer.state[p2]["unorm_vec"] > 0.0
 
 
+def test_lion32bit_rejects_max_unorm():
+    # Update-norm clipping is not implemented for Lion. A positive max_unorm (reachable through
+    # `args` or a config override) must raise instead of clipping with a wrong update norm.
+    p = torch.randn(64, 64)
+    args = bnb.optim.optimizer.MockArgs(
+        {"optim_bits": 32, "min_8bit_size": 4096, "max_unorm": 0.02, "skip_zeros": False}
+    )
+    opt = bnb.optim.Lion([p], args=args)
+    p.grad = torch.randn_like(p)
+    with pytest.raises(NotImplementedError):
+        opt.step()
+
+
 @pytest.mark.parametrize("gtype", [torch.float32, torch.float16, torch.bfloat16], ids=describe_dtype)
 @pytest.mark.parametrize("dim1", [1024], ids=id_formatter("dim1"))
 @pytest.mark.parametrize("dim2", [32, 1024], ids=id_formatter("dim2"))
