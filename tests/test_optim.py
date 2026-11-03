@@ -577,9 +577,9 @@ def test_benchmark_blockwise(dim1, dim2, gtype, optim_name, device):
 
 ademamix_state_dict_opts = [
     ("AdEMAMix8bit", lambda p: bnb.optim.AdEMAMix8bit(p, lr=1e-3)),
-    ("AdEMAMix32bit", lambda p: bnb.optim.AdEMAMix(p, lr=1e-3)),
+    ("AdEMAMix32bit", lambda p: bnb.optim.AdEMAMix32bit(p, lr=1e-3)),
     ("AdEMAMix8bit_scheduled", lambda p: bnb.optim.AdEMAMix8bit(p, lr=1e-3, t_alpha=100, t_beta3=100)),
-    ("AdEMAMix32bit_scheduled", lambda p: bnb.optim.AdEMAMix(p, lr=1e-3, t_alpha=100, t_beta3=100)),
+    ("AdEMAMix32bit_scheduled", lambda p: bnb.optim.AdEMAMix32bit(p, lr=1e-3, t_alpha=100, t_beta3=100)),
 ]
 
 
@@ -681,6 +681,36 @@ def test_ademamix_state_dict_no_nan(optim_name, optim_factory, device):
 
     for p_a, p_b in zip(model.parameters(), model2.parameters()):
         torch.testing.assert_close(p_a, p_b)
+
+
+@pytest.mark.parametrize(
+    "optim_cls",
+    [bnb.optim.AdEMAMix32bit, bnb.optim.PagedAdEMAMix32bit],
+    ids=["AdEMAMix32bit", "PagedAdEMAMix32bit"],
+)
+@pytest.mark.parametrize("scheduled", [False, True], ids=id_formatter("scheduled"))
+@pytest.mark.parametrize("device", get_available_devices())
+def test_ademamix32bit_matches_ademamix(optim_cls, scheduled, device):
+    # AdEMAMix32bit used to subclass Optimizer2State directly, so state1 held a single
+    # EMA although the 32-bit ademamix update reads and writes both (stacked), and the
+    # t_alpha/t_beta3 schedulers were ignored. It must match AdEMAMix(optim_bits=32).
+    kwargs = dict(lr=1e-2, t_alpha=k, t_beta3=k) if scheduled else dict(lr=1e-2)
+    p1 = torch.randn(64, 80, device=device) * 0.1
+    p2 = p1.clone()
+    opt1 = optim_cls([p1], **kwargs)
+    opt2 = bnb.optim.AdEMAMix([p2], optim_bits=32, is_paged=opt1.is_paged, **kwargs)
+
+    for _ in range(5):
+        g = torch.randn_like(p1) * 0.01
+        p1.grad = g.clone()
+        p2.grad = g.clone()
+        opt1.step()
+        opt2.step()
+
+    assert opt1.state[p1]["state1"].shape == (2, *p1.shape)
+    torch.testing.assert_close(opt1.state[p1]["state1"], opt2.state[p2]["state1"], rtol=0, atol=0)
+    torch.testing.assert_close(opt1.state[p1]["state2"], opt2.state[p2]["state2"], rtol=0, atol=0)
+    torch.testing.assert_close(p1, p2, rtol=0, atol=0)
 
 
 @pytest.mark.parametrize("optim_cls", [bnb.optim.LAMB, bnb.optim.LAMB32bit], ids=id_formatter("opt"))
