@@ -127,6 +127,10 @@ def _int8_linear_matmul_impl(A: torch.Tensor, B: torch.Tensor, out: torch.Tensor
         result = torch.matmul(B.float(), A.float().t()).to(torch.int32)
         return out.copy_(result)
 
+    # cuBLASLt reads both operands as dense row-major matrices with the leading dimensions above.
+    A = A.contiguous()
+    B = B.contiguous()
+
     with _cuda_device_of(A):
         ctx = CUBLAS_Context.get_instance().get_context(A.device)
         has_error = lib.cigemmlt_32(
