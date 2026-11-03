@@ -254,48 +254,6 @@ def _(A: torch.Tensor, threshold=0.0):
     return out_row, row_stats, outlier_cols
 
 
-@register_kernel("bitsandbytes::int8_double_quant", "cuda")
-def _(
-    A: torch.Tensor,
-    threshold=0.0,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, Optional[torch.Tensor]]:
-    # Use CUDA kernel for rowwise quant and outlier column detection
-    quant_row, row_stats, outlier_cols = torch.ops.bitsandbytes.int8_vectorwise_quant.default(
-        A,
-        threshold=threshold,
-    )
-
-    # PyTorch impl for colwise
-    col_stats, outlier_mask = _get_col_absmax(A, threshold=threshold)
-    if threshold > 0.0 and outlier_mask is not None:
-        A = A.masked_fill(outlier_mask, 0.0)
-    quant_col = torch.round(A.mul(127.0) / col_stats.unsqueeze(0)).to(torch.int8)
-
-    return quant_row, quant_col, row_stats, col_stats.flatten().float(), outlier_cols
-
-
-def _get_col_absmax(
-    A: torch.Tensor,
-    threshold=0.0,
-) -> tuple[torch.Tensor, Optional[torch.Tensor]]:
-    if not A.is_floating_point():
-        raise ValueError(f"A must be a floating point tensor, got {A.dtype}")
-
-    outlier_mask = None
-
-    absA = A.abs().view(-1, A.shape[-1])
-
-    if threshold > 0.0:
-        # Filter outliers from stats when enabled
-        outlier_mask = absA >= threshold
-        absA.masked_fill_(outlier_mask, 0.0)
-
-    # shape [cols]; unsqueeze(0) gives [1,cols]
-    col_stats = absA.amax(dim=0, keepdim=False).float()
-
-    return col_stats, outlier_mask
-
-
 @register_kernel("bitsandbytes::quantize_blockwise", "cuda")
 def _(A: torch.Tensor, code: torch.Tensor, blocksize: int) -> tuple[torch.Tensor, torch.Tensor]:
     A = A.contiguous()

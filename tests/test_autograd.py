@@ -131,6 +131,26 @@ def test_matmullt(
 
 
 @pytest.mark.parametrize("device", get_available_devices())
+@pytest.mark.parametrize("threshold", [0.0, 6.0], ids=id_formatter("threshold"))
+def test_matmullt_weight_requires_grad(device, threshold):
+    # When B requires grad, A is quantized with int8_double_quant instead of int8_vectorwise_quant.
+    A = torch.randn(16, 64, dtype=torch.float16, device=device)
+    A[:, 3] = 8.0
+    B = torch.randn(32, 64, dtype=torch.float16, device=device)
+
+    outputs = []
+    for requires_grad in (False, True):
+        state = bnb.MatmulLtState()
+        state.threshold = threshold
+        # Use MatMul8bitLt on every device; CPU/XPU training would dispatch to MatMul8bitFp.
+        state.is_training = False
+        outputs.append(bnb.matmul(A, B.detach().requires_grad_(requires_grad), state=state))
+
+    assert outputs[1].requires_grad
+    torch.testing.assert_close(outputs[1], outputs[0])
+
+
+@pytest.mark.parametrize("device", get_available_devices())
 @pytest.mark.parametrize("dim2", [64, 0], ids=id_formatter("dim2"))
 @pytest.mark.parametrize("dim3", [64], ids=id_formatter("dim3"))
 @pytest.mark.parametrize("dim4", [96], ids=id_formatter("dim4"))

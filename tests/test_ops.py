@@ -92,6 +92,41 @@ class TestLLMInt8Ops:
 
         opcheck(torch.ops.bitsandbytes.int8_scaled_mm, (A, B, row_stats, col_stats, bias, dtype))
 
+    @pytest.mark.parametrize("threshold", [0.0, 6.0])
+    @pytest.mark.parametrize("device", get_available_devices())
+    def test_int8_double_quant(self, threshold, device):
+        A = torch.randn(10, 20, dtype=torch.float16, device=device)
+        A[1][0] = 100.0
+
+        out_row, out_col, row_stats, col_stats, outlier_cols = torch.ops.bitsandbytes.int8_double_quant(
+            A, threshold=threshold
+        )
+
+        assert out_row.shape == out_col.shape == (10, 20)
+        assert out_row.dtype == out_col.dtype == torch.int8
+        assert row_stats.shape == (10,)
+        assert col_stats.shape == (20,)
+        assert row_stats.dtype == col_stats.dtype == torch.float32
+
+        # Row-wise results are the same as int8_vectorwise_quant.
+        ref_row, ref_row_stats, ref_outlier_cols = torch.ops.bitsandbytes.int8_vectorwise_quant(A, threshold=threshold)
+        torch.testing.assert_close(out_row, ref_row, rtol=0, atol=0)
+        torch.testing.assert_close(row_stats, ref_row_stats, rtol=0, atol=0)
+
+        # Column-wise results leave out the outliers when a threshold is set.
+        A_ref = A.float()
+        if threshold > 0.0:
+            A_ref = A_ref.masked_fill(A_ref.abs() >= threshold, 0.0)
+        ref_col_stats = A_ref.abs().amax(dim=0)
+        torch.testing.assert_close(col_stats, ref_col_stats, rtol=0, atol=0)
+        torch.testing.assert_close(out_col, torch.round(A_ref * 127.0 / ref_col_stats).to(torch.int8), rtol=0, atol=1)
+
+        if threshold > 0.0:
+            torch.testing.assert_close(outlier_cols, ref_outlier_cols)
+            opcheck(torch.ops.bitsandbytes.int8_double_quant, (A, threshold))
+        else:
+            assert outlier_cols is None
+
 
 class TestInt8BlockwiseQuantOps:
     @pytest.mark.parametrize("device", get_available_devices())
