@@ -1347,6 +1347,10 @@ __launch_bounds__(1024, BNB_MAX_THREADS_PER_SM / 1024) __global__
     const int row_id = blockIdx.x;
     const T* row_data = A + (row_id * cols);
 
+    // Both passes must compare against the same threshold value. Otherwise a value equal to T(threshold)
+    // can be left out of the row's absmax but still be quantized with it, which overflows int8.
+    const T th = T(threshold);
+
     // Threads will read the row values in a striped access pattern and find a local absmax.
     T row_local_absmax = -FLT_MIN;
     for (int i = threadIdx.x; i < cols; i += THREADS) {
@@ -1355,7 +1359,7 @@ __launch_bounds__(1024, BNB_MAX_THREADS_PER_SM / 1024) __global__
         // For sparse decomposition, values outside of the threshold are not to be
         // included when calculating the row's absmax.
         if constexpr (SPARSE_DECOMP) {
-            row_local_absmax = fmaxf(row_local_absmax, absval < T(threshold) ? absval : row_local_absmax);
+            row_local_absmax = fmaxf(row_local_absmax, absval < th ? absval : row_local_absmax);
         } else {
             row_local_absmax = fmaxf(row_local_absmax, absval);
         }
@@ -1377,7 +1381,7 @@ __launch_bounds__(1024, BNB_MAX_THREADS_PER_SM / 1024) __global__
         if constexpr (SPARSE_DECOMP) {
             // For sparse decomposition, we do not want to quantize the outliers.
             // Instead they're zeroed out.
-            out[row_id * cols + i] = fabs(val) < threshold ? __float2int_rn(val * scale) : 0;
+            out[row_id * cols + i] = fabs(val) < (float)th ? __float2int_rn(val * scale) : 0;
         } else {
             out[row_id * cols + i] = __float2int_rn(val * scale);
         }
