@@ -139,6 +139,8 @@ def dequantize_4bit_inplace(
         raise ValueError(f"Expected out.shape == {shape}, got {out.shape}")
     if out.dtype != dtype:
         raise ValueError(f"Expected out.dtype == {dtype}, got {out.dtype}")
+    if A.dtype != torch.uint8:
+        A = A.squeeze().view(torch.uint8).unsqueeze(1)
     with torch_accelerator_module.device(A.device):
         kernels_4bit.dequantize_4bit_impl(A, absmax, blocksize, quant_type, dtype, out=out)
 
