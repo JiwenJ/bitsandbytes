@@ -1040,7 +1040,7 @@ def _optimizer_update_2state_8bit_blockwise_triton_kernel(
             state1_ptr + n_elements,
             offsets,
             qmap1_ptr,
-            absmax1_ptr + n_elements // BLOCK_SIZE_N,
+            absmax1_ptr + tl.cdiv(n_elements, BLOCK_SIZE_N),
             mask,
             BLOCK_SIZE_N,
         )
@@ -1075,7 +1075,7 @@ def _optimizer_update_2state_8bit_blockwise_triton_kernel(
         m2_codes, new_absmax_m2 = quantize_8bit_blockwise_kernel_util(m2, qmap1_ptr, 256, BLOCK_SIZE_N, N_PER_TH)
         tl.store(state1_ptr + n_elements + offsets, m2_codes, mask=mask)
         tl.store(
-            absmax1_ptr + block_start_idx + tl.arange(0, N_PER_TH) + n_elements // BLOCK_SIZE_N,
+            absmax1_ptr + block_start_idx + tl.arange(0, N_PER_TH) + tl.cdiv(n_elements, BLOCK_SIZE_N),
             new_absmax_m2,
         )
 

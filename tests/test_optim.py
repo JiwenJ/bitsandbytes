@@ -683,6 +683,36 @@ def test_ademamix_state_dict_no_nan(optim_name, optim_factory, device):
         torch.testing.assert_close(p_a, p_b)
 
 
+@pytest.mark.parametrize("device", get_available_devices())
+def test_ademamix8bit_partial_block_absmax(device):
+    """absmax1 of AdEMAMix8bit holds the m1 and m2 block scales as two rows of ceil(numel / 256).
+
+    Regression test: when numel % 256 != 0, the CUDA and Triton kernels started the m2 row at
+    floor(numel / 256), so m1's last block and m2's first block shared one entry and the last
+    m2 entry was never written.
+    """
+    torch.manual_seed(0)
+    blocksize = 256
+    p = torch.randn(16 * blocksize + 3, device=device) * 0.1
+    opt = bnb.optim.AdEMAMix8bit([p])
+    beta1, _, beta3 = opt.param_groups[0]["betas"]
+    p.grad = torch.randn_like(p) * 0.01
+    opt.step()
+
+    # Starting from zero state, one step gives m1 = (1 - beta1) * g and m2 = (1 - beta3) * g.
+    expected = torch.stack(((1 - beta1) * p.grad, (1 - beta3) * p.grad))
+    padded = torch.nn.functional.pad(expected, (0, blocksize - p.numel() % blocksize))
+    expected_absmax = padded.view(2, -1, blocksize).abs().amax(dim=-1)
+
+    state = opt.state[p]
+    torch.testing.assert_close(state["absmax1"], expected_absmax, rtol=1e-3, atol=0.0)
+    for row in range(2):
+        m = F.dequantize_blockwise(
+            state["state1"][row], absmax=state["absmax1"][row], code=state["qmap1"], blocksize=blocksize
+        )
+        torch.testing.assert_close(m, expected[row], rtol=0.0, atol=0.01 * expected_absmax[row].max().item())
+
+
 @pytest.mark.parametrize("optim_cls", [bnb.optim.LAMB, bnb.optim.LAMB32bit], ids=id_formatter("opt"))
 @pytest.mark.parametrize("max_unorm", [0.0, 0.5, 2.0], ids=id_formatter("max_unorm"))
 def test_lamb_max_unorm_threaded_to_config(optim_cls, max_unorm):

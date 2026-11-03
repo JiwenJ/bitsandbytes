@@ -927,6 +927,9 @@ __launch_bounds__(256, 3) __global__ void kOptimizerStatic8bit2StateBlockwise(
     float s1_vals[N_PER_TH];
     float s2_vals[N_PER_TH];
     float s3_vals[N_PER_TH];
+    // AdEMAMix keeps the absmax of its third state in the second row of absmax1,
+    // which starts after the ceil(n / BLOCK_SIZE) blocks of the first state.
+    const int absmax3_offset = (n + BLOCK_SIZE - 1) / BLOCK_SIZE;
 
     // 2-5%
     const float correction1 = 1.0f - __powf(beta1, step);
@@ -1028,7 +1031,7 @@ __launch_bounds__(256, 3) __global__ void kOptimizerStatic8bit2StateBlockwise(
 
                 if (OPTIMIZER == ADEMAMIX) {
                     // The absmax for the third state is appended to absmax1
-                    s3_vals[j] = smem_quantiles1[lane_id][c3s[j]] * absmax1[(n + i) / BLOCK_SIZE];
+                    s3_vals[j] = smem_quantiles1[lane_id][c3s[j]] * absmax1[absmax3_offset + i / BLOCK_SIZE];
                     s3_vals[j] = (s3_vals[j] * beta3) + (((1.0f - beta3) * g_val));
                 }
             } else {
@@ -1072,7 +1075,7 @@ __launch_bounds__(256, 3) __global__ void kOptimizerStatic8bit2StateBlockwise(
             absmax2[i / BLOCK_SIZE] = new_local_abs_max2;
 
             if (OPTIMIZER == ADEMAMIX) {
-                absmax1[(n + i) / BLOCK_SIZE] = new_local_abs_max3;
+                absmax1[absmax3_offset + i / BLOCK_SIZE] = new_local_abs_max3;
             }
         } else {
             new_local_abs_max1 = smem_exchange1[0];
