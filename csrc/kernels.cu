@@ -1016,20 +1016,25 @@ __launch_bounds__(256, 3) __global__ void kOptimizerStatic8bit2StateBlockwise(
         for (unsigned int j = 0; j < N_PER_TH; j++) {
             if (!isnan((float)g_vals[j]) && !isinf((float)g_vals[j])) {
                 s2_vals[j] = smem_quantiles2[lane_id][c2s[j]] * absmax2[i / BLOCK_SIZE];
-                g_val = g_vals[j];
-                // float ratio = (g_val*g_val)/fmaxf(s2_vals[j], eps*eps);
-                // g_val = ratio > 2.0f ? 2.0f*g_val/ratio : g_val;
-                g_val *= gnorm_scale;
-
-                s2_vals[j] = (s2_vals[j] * beta2) + (((1.0f - beta2) * g_val * g_val));
-
                 s1_vals[j] = smem_quantiles1[lane_id][c1s[j]] * absmax1[i / BLOCK_SIZE];
-                s1_vals[j] = (s1_vals[j] * beta1) + (((1.0f - beta1) * g_val));
 
                 if (OPTIMIZER == ADEMAMIX) {
                     // The absmax for the third state is appended to absmax1
                     s3_vals[j] = smem_quantiles1[lane_id][c3s[j]] * absmax1[(n + i) / BLOCK_SIZE];
-                    s3_vals[j] = (s3_vals[j] * beta3) + (((1.0f - beta3) * g_val));
+                }
+
+                // with skip_zeros, elements with a zero gradient keep their previous state
+                if (!skip_zeros || (skip_zeros && ((float)g_vals[j] != 0.0f))) {
+                    g_val = g_vals[j];
+                    // float ratio = (g_val*g_val)/fmaxf(s2_vals[j], eps*eps);
+                    // g_val = ratio > 2.0f ? 2.0f*g_val/ratio : g_val;
+                    g_val *= gnorm_scale;
+
+                    s2_vals[j] = (s2_vals[j] * beta2) + (((1.0f - beta2) * g_val * g_val));
+                    s1_vals[j] = (s1_vals[j] * beta1) + (((1.0f - beta1) * g_val));
+
+                    if (OPTIMIZER == ADEMAMIX)
+                        s3_vals[j] = (s3_vals[j] * beta3) + (((1.0f - beta3) * g_val));
                 }
             } else {
                 s1_vals[j] = 0.0f;
@@ -1088,8 +1093,8 @@ __launch_bounds__(256, 3) __global__ void kOptimizerStatic8bit2StateBlockwise(
 //  reduce: 2.67/1.69 -> 2.67/1.70
 #pragma unroll N_PER_TH
         for (unsigned int j = 0; j < N_PER_TH; j++) {
-            // if(!skip_zeros || (skip_zeros && ((float)g_vals[j] != 0.0f)))
-            if (!isnan((float)g_vals[j]) && !isinf((float)g_vals[j])) {
+            if (!isnan((float)g_vals[j]) && !isinf((float)g_vals[j]) &&
+                (!skip_zeros || (skip_zeros && ((float)g_vals[j] != 0.0f)))) {
                 if (OPTIMIZER == ADEMAMIX) {
                     p_vals[j] =
                         T((float)p_vals[j] - lr * (((s1_vals[j] / correction1) + (alpha * s3_vals[j])) /
