@@ -732,7 +732,10 @@ void cfill_fp32(float* A, float* B, float value, long n) {
         auto& q = xpu_default_queue();
         q.fill(A, value, static_cast<size_t>(n)).wait();
     } catch (const sycl::exception& e) {
-        fprintf(stderr, "XPU Error in cfill_fp32: %s\n", e.what());
+        // Callers rely on A being filled. A is USM shared memory (see cget_managed_ptr), so fill it on the host.
+        fprintf(stderr, "XPU Warning: sycl::queue::fill failed in cfill_fp32, filling on the host: %s\n", e.what());
+        for (long i = 0; i < n; i++)
+            A[i] = value;
     }
 }
 
