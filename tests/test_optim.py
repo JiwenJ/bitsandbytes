@@ -531,6 +531,21 @@ def test_optimizer8bit(dim1, dim2, gtype, optim_name, device):
             torch_optimizer.state[p1][name1].copy_(s.data)
 
 
+@pytest.mark.parametrize("optim_cls", [bnb.optim.PagedAdEMAMix, bnb.optim.PagedAdEMAMix8bit], ids=lambda c: c.__name__)
+def test_paged_ademamix_cpu_fallback(optim_cls):
+    # Like the other paged optimizers, paged AdEMAMix must fall back to regular state
+    # buffers on CPU; for parameters with numel >= 1e5 it requested a paged buffer and failed.
+    p = torch.nn.Parameter(torch.randn(320, 320) * 0.1)
+    opt = optim_cls([p])
+    p.grad = torch.randn_like(p) * 0.01
+    with pytest.warns(UserWarning, match="Paged optimizers are not supported on CPU"):
+        opt.step()
+
+    assert opt.state[p]["state1"].shape == (2, *p.shape)
+    assert not getattr(opt.state[p]["state1"], "is_paged", False)
+    assert torch.isfinite(p).all()
+
+
 optimizer_names_benchmark = [
     "adam8bit_blockwise",
     "paged_adam8bit_blockwise",

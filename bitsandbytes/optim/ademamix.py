@@ -1,6 +1,7 @@
 from collections.abc import Iterable
 import math
 from typing import Literal, Optional
+import warnings
 
 import torch
 
@@ -258,6 +259,14 @@ class AdEMAMix(Optimizer2State):
             )
 
     def _get_state_double_buffer(self, p, dtype=torch.float32):
+        if p.device.type == "cpu":
+            if self.is_paged and not getattr(self, "_cpu_paged_warned", False):
+                warnings.warn(
+                    "Paged optimizers are not supported on CPU. Falling back to non-paged optimizer behavior.",
+                    stacklevel=2,
+                )
+                self._cpu_paged_warned = True
+            return torch.zeros((2, *p.size()), dtype=dtype, device=p.device)
         if not self.is_paged or p.numel() < 1e5:
             return torch.zeros((2, *p.size()), dtype=dtype, device=p.device)
         else:
