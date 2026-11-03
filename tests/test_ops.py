@@ -63,6 +63,26 @@ class TestLLMInt8Ops:
         opcheck(torch.ops.bitsandbytes.int8_vectorwise_quant, (A, threshold))
 
     @pytest.mark.parametrize("device", get_available_devices())
+    def test_int8_vectorwise_quant_does_not_modify_input(self, device):
+        A = torch.randn(10, 20, dtype=torch.float16, device=device)
+        A[1][0] = 1000.0
+        A[5][7] = -1000.0
+        A_ref = A.clone()
+        version = A._version
+
+        out_row, row_stats, outlier_cols = torch.ops.bitsandbytes.int8_vectorwise_quant(A, threshold=6.0)
+
+        # The input must not be written to, not even temporarily: a bumped version
+        # counter breaks autograd for any other op that saved A for backward.
+        assert A._version == version
+        torch.testing.assert_close(A, A_ref, rtol=0, atol=0)
+
+        # Outliers are still excluded from the row statistics and their columns are zeroed.
+        assert outlier_cols.tolist() == [0, 7]
+        assert (row_stats < 6.0).all()
+        assert (out_row[:, outlier_cols] == 0).all()
+
+    @pytest.mark.parametrize("device", get_available_devices())
     def test_int8_mm_dequant(self, device):
         A = torch.randint(-128, 127, (256, 256), dtype=torch.int32, device=device)
         row_stats = torch.randn(256, dtype=torch.float32, device=device)

@@ -144,18 +144,15 @@ def _(A: torch.Tensor, threshold=0.0):
     rows = A.numel() // A.shape[-1]
     outlier_cols = None
 
-    outlier_restore = None
-
     if threshold > 0.0:
         outliers = A.abs() >= threshold
 
         if outliers.any():
             # Determine which columns contain outliers, and zero out the
-            # outliers ahead of quantization. We need to keep a backup of these
-            # outliers to restore them after quantization.
+            # outliers ahead of quantization. This is done out-of-place so
+            # that the caller's tensor is never modified.
             outlier_cols = torch.argwhere(outliers.any(dim=0)).view(-1)
-            outlier_restore = A[outliers].clone()
-            A[outliers] = 0
+            A = A.masked_fill(outliers, 0.0)
         else:
             # Needed for torch.compile support.
             outlier_cols = torch.empty(0, device=A.device, dtype=torch.int64)
@@ -169,10 +166,6 @@ def _(A: torch.Tensor, threshold=0.0):
     # Zero out values from outlier columns across all rows.
     if rows > 1 and outlier_cols is not None:
         out_row[:, outlier_cols] = 0
-
-    # Restore outliers.
-    if outlier_restore is not None:
-        A[outliers] = outlier_restore
 
     return out_row, row_stats, outlier_cols
 
