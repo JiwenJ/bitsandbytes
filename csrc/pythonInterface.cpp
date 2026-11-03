@@ -338,6 +338,32 @@ static sycl::queue& xpu_default_queue() {
     static sycl::queue q{sycl::gpu_selector_v, sycl::property::queue::in_order{}};
     return q;
 }
+
+// Helper: get the SYCL queue of the XPU that PyTorch numbers `device` (one queue per device, created once).
+// PyTorch numbers the GPUs of one Level Zero platform in enumeration order, so the GPUs of the default
+// device's platform are used when the default device is the first of them. Otherwise, and for indices
+// outside that list, this returns the default queue, which is what was used for every device before.
+static sycl::queue& xpu_device_queue(int device) {
+    static std::vector<sycl::queue> queues = [] {
+        std::vector<sycl::queue> qs;
+        try {
+            sycl::queue& q0 = xpu_default_queue();
+            auto gpus = q0.get_device().get_platform().get_devices(sycl::info::device_type::gpu);
+            if (!gpus.empty() && gpus[0] == q0.get_device()) {
+                qs.push_back(q0);
+                for (size_t i = 1; i < gpus.size(); i++)
+                    qs.emplace_back(q0.get_context(), gpus[i], sycl::property_list{sycl::property::queue::in_order{}});
+            }
+        } catch (const sycl::exception& e) {
+            fprintf(stderr, "XPU Warning: using the default queue for all devices: %s\n", e.what());
+            qs.clear();
+        }
+        return qs;
+    }();
+    if (device < 0 || device >= static_cast<int>(queues.size()))
+        return xpu_default_queue();
+    return queues[device];
+}
 #endif
 
 extern "C" {
@@ -720,7 +746,7 @@ void cprefetch(void* ptr, size_t bytes, int device) {
     if (device < 0)
         return;
     try {
-        auto& q = xpu_default_queue();
+        auto& q = xpu_device_queue(device);
         q.prefetch(ptr, bytes);
     } catch (const sycl::exception& e) {
         fprintf(stderr, "XPU Warning: sycl::queue::prefetch failed: %s\n", e.what());
