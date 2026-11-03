@@ -131,6 +131,35 @@ def test_matmullt(
 
 
 @pytest.mark.parametrize("device", get_available_devices())
+@pytest.mark.parametrize("threshold", [0.0, 6.0], ids=id_formatter("threshold"))
+@pytest.mark.parametrize("shape", [(2, 3, 5, 64), (2, 2, 3, 4, 64)], ids=["4d", "5d"])
+def test_matmullt_high_rank_input(device, threshold, shape):
+    # Inputs with more than three dims must give the same result as the flattened 2-D input.
+    B = torch.randn(32, shape[-1], dtype=torch.float16, device=device)
+    A = torch.randn(shape, dtype=torch.float16, device=device)
+    A[..., 7] = 8.0
+    A.requires_grad_(True)
+    A_2d = A.detach().reshape(-1, shape[-1]).requires_grad_(True)
+
+    state = bnb.MatmulLtState()
+    state.threshold = threshold
+    state.has_fp16_weights = False
+    state.is_training = False
+    state.CB, state.SCB, _ = bnb.functional.int8_vectorwise_quant(B)
+
+    out = bnb.matmul(A, state.CB, state=state)
+    out_2d = bnb.matmul(A_2d, state.CB, state=state)
+
+    assert out.shape == (*shape[:-1], 32)
+    torch.testing.assert_close(out, out_2d.reshape(out.shape))
+
+    grad = torch.randn_like(out)
+    out.backward(grad)
+    out_2d.backward(grad.reshape(out_2d.shape))
+    torch.testing.assert_close(A.grad, A_2d.grad.reshape(shape))
+
+
+@pytest.mark.parametrize("device", get_available_devices())
 @pytest.mark.parametrize("dim2", [64, 0], ids=id_formatter("dim2"))
 @pytest.mark.parametrize("dim3", [64], ids=id_formatter("dim3"))
 @pytest.mark.parametrize("dim4", [96], ids=id_formatter("dim4"))

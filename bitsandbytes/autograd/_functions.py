@@ -128,7 +128,7 @@ class MatMul8bitLt(torch.autograd.Function):
         if A.dtype != torch.float16 and not _is_compiling():
             logger.warning("MatMul8bitLt: inputs will be cast from %s to float16 during quantization", A.dtype)
 
-        if len(A.shape) == 3:
+        if A.dim() != 2:
             A = A.reshape(-1, A.shape[-1])
 
         # 1. Quantize A. Note that as a side-effect, outliers are suppressed in CA/CAt.
@@ -193,7 +193,7 @@ class MatMul8bitLt(torch.autograd.Function):
 
         output_shape = (*input_shape[:-1], state.CB.shape[0])
 
-        if len(input_shape) == 3:
+        if len(input_shape) != 2:
             return output.reshape(output_shape)
 
         return output
@@ -215,7 +215,7 @@ class MatMul8bitLt(torch.autograd.Function):
             grad_bias = grad_output.sum(0, dtype=ctx.dtype_bias)
 
         # Cast grad_output to fp16
-        if len(grad_output.shape) == 3:
+        if grad_output.dim() > 2:
             grad_output = grad_output.reshape(-1, grad_output.shape[-1]).contiguous()
 
         if req_gradB:
