@@ -369,6 +369,49 @@ def test_override_config_after_register(device):
     assert adam.state[p2]["state1"].dtype == torch.uint8
 
 
+def test_override_config_copies_key_value_dict():
+    # override_config stored the caller's dict itself for every parameter, so a later
+    # override of one parameter leaked into the other parameters and the caller's dict.
+    mng = bnb.optim.GlobalOptimManager.get_instance()
+    mng.initialize()
+
+    p1 = torch.randn(8, 8)
+    p2 = torch.randn(8, 8)
+    user_config = {"optim_bits": 8}
+    mng.override_config([p1, p2], key_value_dict=user_config)
+    mng.override_config(p1, "lr", 0.0)
+
+    p1_before, p2_before = p1.clone(), p2.clone()
+    adam = bnb.optim.Adam([p1, p2], lr=0.1)
+    p1.grad = torch.randn_like(p1)
+    p2.grad = torch.randn_like(p2)
+    adam.step()
+
+    assert user_config == {"optim_bits": 8}
+    torch.testing.assert_close(p1, p1_before)  # lr=0.0 only applies to p1
+    assert not torch.equal(p2, p2_before)
+    mng.initialize()
+
+
+def test_override_config_kept_with_module_override():
+    # Embedding registers a module override ({"optim_bits": 32}) for its weight; on the
+    # first step it used to replace any override the user had set for the same weight.
+    mng = bnb.optim.GlobalOptimManager.get_instance()
+    mng.initialize()
+
+    emb = bnb.nn.Embedding(128, 64)
+    mng.override_config(emb.weight, "lr", 0.0)
+    w_before = emb.weight.detach().clone()
+
+    adam = bnb.optim.Adam8bit(emb.parameters(), lr=0.1)
+    emb.weight.grad = torch.randn_like(emb.weight)
+    adam.step()
+
+    assert adam.state[emb.weight]["state1"].dtype == torch.float32  # module override
+    torch.testing.assert_close(emb.weight.detach(), w_before)  # user override (lr=0.0)
+    mng.initialize()
+
+
 optimizer_names_8bit = [
     "adam8bit_blockwise",
     "lion8bit_blockwise",

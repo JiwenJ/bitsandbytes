@@ -108,7 +108,7 @@ class GlobalOptimManager:
                 if id(p) in self.pid2config:
                     self.pid2config[id(p)].update(key_value_dict)
                 else:
-                    self.pid2config[id(p)] = key_value_dict
+                    self.pid2config[id(p)] = dict(key_value_dict)
 
     def register_module_override(self, module, param_name, config):
         self.module_weight_config_triple.append((module, param_name, config))
@@ -297,8 +297,8 @@ class Optimizer8bit(torch.optim.Optimizer):
                         break
                     if id(p) == id(pmodule):
                         # found the matching parameter
-                        # init override
-                        self.mng.pid2config[id(p)] = config
+                        # init override, keeping any override the user set for this parameter
+                        self.mng.pid2config[id(p)] = {**config, **self.mng.pid2config.get(id(p), {})}
                         self.mng.index2config[(gindex, pindex)] = self.mng.pid2config[id(p)]
                         found = True
 
