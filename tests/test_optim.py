@@ -292,6 +292,27 @@ def test_lion32bit_weight_decay(dim1, dim2, gtype, device):
             p2.copy_(p1.data)
 
 
+def test_reference_ademamix_schedule_multiple_params():
+    # _ReferenceAdEMAMix wrote the scheduled alpha/beta3 back into the per-group variables
+    # inside its parameter loop, so every parameter after the first one in a group was
+    # scheduled again from the already scheduled values.
+    p1 = torch.randn(16, 16) * 0.1
+    p2 = torch.randn(16, 16) * 0.1
+    p2_alone = p2.clone()
+    opt = bnb.optim.ademamix._ReferenceAdEMAMix([p1, p2], t_alpha=k, t_beta3=k)
+    opt_alone = bnb.optim.ademamix._ReferenceAdEMAMix([p2_alone], t_alpha=k, t_beta3=k)
+
+    for _ in range(5):
+        g2 = torch.randn_like(p2) * 0.01
+        p1.grad = torch.randn_like(p1) * 0.01
+        p2.grad = g2.clone()
+        p2_alone.grad = g2.clone()
+        opt.step()
+        opt_alone.step()
+
+    torch.testing.assert_close(p2, p2_alone, rtol=0, atol=0)
+
+
 @pytest.mark.parametrize("dim1", [1024], ids=id_formatter("dim1"))
 @pytest.mark.parametrize("dim2", [32, 1024, 4097], ids=id_formatter("dim2"))
 @pytest.mark.parametrize("gtype", [torch.float32, torch.float16], ids=describe_dtype)

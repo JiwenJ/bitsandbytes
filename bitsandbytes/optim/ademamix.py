@@ -74,26 +74,30 @@ class _ReferenceAdEMAMix(torch.optim.Optimizer):
 
                 # Apply scheduler for alpha
                 if t_alpha is not None:
-                    alpha = min(group["step"] * alpha / t_alpha, alpha)
+                    alpha_t = min(group["step"] * alpha / t_alpha, alpha)
+                else:
+                    alpha_t = alpha
 
                 # Apply scheduler for beta3
                 if t_beta3 is not None:
                     ln_beta1 = math.log(beta1)
                     ln_beta3 = math.log(beta3)
                     step_scale = group["step"] / t_beta3
-                    beta3 = min(
+                    beta3_t = min(
                         math.exp((ln_beta1 * ln_beta3) / (((1 - step_scale) * ln_beta3) + (step_scale * ln_beta1))),
                         beta3,
                     )
+                else:
+                    beta3_t = beta3
 
                 # Update the EMAs
                 m1.mul_(beta1).add_(grad, alpha=1 - beta1)
-                m2.mul_(beta3).add_(grad, alpha=1 - beta3)
+                m2.mul_(beta3_t).add_(grad, alpha=1 - beta3_t)
                 nu.mul_(beta2).addcmul_(grad, grad, value=1 - beta2)
 
                 # Compute step
                 denom = (nu.sqrt() / (bias_correction2**0.5)).add(eps)
-                update = (m1.div(bias_correction1) + alpha * m2) / denom
+                update = (m1.div(bias_correction1) + alpha_t * m2) / denom
 
                 # Add weight decay
                 update.add_(p, alpha=weight_decay)
