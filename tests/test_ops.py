@@ -2,6 +2,7 @@ from math import prod
 
 import pytest
 import torch
+from torch._subclasses.fake_tensor import FakeTensorMode
 
 import bitsandbytes
 from tests.helpers import TRUE_FALSE, describe_dtype, get_available_devices, id_formatter, is_supported_on_hpu
@@ -35,6 +36,36 @@ class TestLLMInt8Ops:
         assert out.device == A.device
 
         opcheck(torch.ops.bitsandbytes.int8_linear_matmul.out, (A, B, out))
+
+    @pytest.mark.parametrize("has_outliers", TRUE_FALSE, ids=id_formatter("has_outliers"))
+    @pytest.mark.parametrize("device", get_available_devices())
+    def test_int8_mixed_scaled_mm(self, device, has_outliers):
+        A = torch.randn(10, 20, dtype=torch.float16, device=device)
+        if has_outliers:
+            A[:, 3] = 8.0
+        B = torch.randn(30, 20, dtype=torch.float16, device=device)
+        CA, SCA, outlier_cols = torch.ops.bitsandbytes.int8_vectorwise_quant(A, threshold=6.0)
+        CB, SCB, _ = torch.ops.bitsandbytes.int8_vectorwise_quant(B)
+
+        out, subA = torch.ops.bitsandbytes.int8_mixed_scaled_mm(A, CA, CB, SCA, SCB, outlier_cols)
+
+        assert out.shape == (10, 30)
+        assert out.dtype == A.dtype
+        assert subA.shape == (10, outlier_cols.numel())
+        assert subA.dtype == A.dtype
+
+        opcheck(torch.ops.bitsandbytes.int8_mixed_scaled_mm, (A, CA, CB, SCA, SCB, outlier_cols))
+
+    def test_int8_double_quant_fake_without_threshold(self):
+        # Like the real implementation, no outlier columns are returned when threshold == 0.
+        with FakeTensorMode():
+            A = torch.empty(10, 20, dtype=torch.float16)
+            out_row, out_col, row_stats, col_stats, outlier_cols = torch.ops.bitsandbytes.int8_double_quant(A, 0.0)
+
+        assert out_row.shape == out_col.shape == (10, 20)
+        assert row_stats.shape == (10,)
+        assert col_stats.shape == (20,)
+        assert outlier_cols is None
 
     @pytest.mark.parametrize("threshold", [0.0, 6.0])
     @pytest.mark.parametrize("device", get_available_devices())
@@ -218,6 +249,21 @@ class Test4bitBlockwiseQuantOps:
             torch.ops.bitsandbytes.dequantize_4bit.default,
             (A, absmax, blocksize, quant_type, shape, dtype),
         )
+
+    def test_dequantize_4bit_out_fake(self):
+        shape, blocksize = (128, 64), 64
+        with FakeTensorMode():
+            A = torch.empty((prod(shape) // 2, 1), dtype=torch.uint8)
+            absmax = torch.empty((prod(shape) // blocksize,), dtype=torch.float32)
+            out = torch.empty(shape, dtype=torch.float16)
+
+            # The int[] shape argument is passed to the fake implementation as a list.
+            torch.ops.bitsandbytes.dequantize_4bit.out(A, absmax, blocksize, "nf4", shape, torch.float16, out)
+
+            with pytest.raises(RuntimeError, match=r"Expected out\.shape"):
+                torch.ops.bitsandbytes.dequantize_4bit.out(
+                    A, absmax, blocksize, "nf4", shape, torch.float16, out.view(64, 128)
+                )
 
     @pytest.mark.parametrize("device", get_available_devices())
     @pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16, torch.float32], ids=id_formatter("dtype"))

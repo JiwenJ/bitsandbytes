@@ -88,7 +88,7 @@ def _(
 
     else:
         # Needed for torch.compile when there are no outliers.
-        subA = torch.empty(0, device=A.device, dtype=A.dtype)
+        subA = A.new_empty((A.shape[0], 0))
 
     # Int8 Matmul + Dequant + Bias
     output = torch.ops.bitsandbytes.int8_scaled_mm.default(CA, CB, SCA, SCB, bias=bias, dtype=A.dtype)

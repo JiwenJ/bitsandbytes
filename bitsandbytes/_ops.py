@@ -27,8 +27,9 @@ def _(
 
     out = torch.empty(shapeC, device=A.device, dtype=A.dtype)
 
-    outlier_cols = torch.library.get_ctx().new_dynamic_size()
-    subA = A.new_empty(outlier_cols, dtype=torch.int64)
+    # The outlier columns of A, in the original precision.
+    num_outliers = outlier_cols.numel() if outlier_cols is not None else 0
+    subA = A.new_empty((A.shape[0], num_outliers))
 
     return out, subA
 
@@ -154,6 +155,10 @@ def _(
     out_col = torch.empty_like(A, dtype=torch.int8)
     row_stats = torch.empty(A.numel() // A.shape[-1], device=A.device, dtype=torch.float32)
     col_stats = torch.empty(A.shape[-1], device=A.device, dtype=torch.float32)
+
+    if threshold == 0.0:
+        return out_row, out_col, row_stats, col_stats, None
+
     outlier_n = torch.library.get_ctx().new_dynamic_size()
     outlier_cols = A.new_empty(outlier_n, dtype=torch.int64)
     return out_row, out_col, row_stats, col_stats, outlier_cols
@@ -207,7 +212,7 @@ def _(
         dtype in (torch.float16, torch.bfloat16, torch.float32),
         lambda: f"Blockwise 4bit dequantization only supports 16/32-bit floats, but got {dtype}",
     )
-    torch._check(out.shape == shape, lambda: f"Expected out.shape == {shape}, got {out.shape}")
+    torch._check(out.shape == tuple(shape), lambda: f"Expected out.shape == {shape}, got {out.shape}")
     torch._check(out.device == A.device, lambda: f"Expected out.device == {A.device}, got {out.device}")
     torch._check(out.dtype == dtype, lambda: f"Expected out.dtype == {dtype}, got {out.dtype}")
 
