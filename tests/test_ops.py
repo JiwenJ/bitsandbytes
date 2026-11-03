@@ -472,3 +472,21 @@ class TestNonContiguousInputs:
         deq_c = torch.ops.bitsandbytes.dequantize_4bit(q_c, absmax_c, blocksize, quant_type, shape, dtype)
 
         torch.testing.assert_close(deq_nc, deq_c)
+
+    @pytest.mark.parametrize("device", get_available_devices())
+    @pytest.mark.parametrize("threshold", [0.0, 6.0])
+    def test_int8_vectorwise_quant_non_contiguous(self, device, threshold):
+        # Strided rows, e.g. hidden_states[:, 0] in a BERT pooler with batch > 1.
+        A_full = torch.randn(8, 4, 64, dtype=torch.float16, device=device)
+        A_full[2, 0, 5] = 1000.0
+        A_noncontig = A_full[:, 0]
+        assert not A_noncontig.is_contiguous()
+
+        A_contig = A_noncontig.contiguous()
+
+        out_nc, stats_nc, outliers_nc = torch.ops.bitsandbytes.int8_vectorwise_quant(A_noncontig, threshold)
+        out_c, stats_c, outliers_c = torch.ops.bitsandbytes.int8_vectorwise_quant(A_contig, threshold)
+
+        torch.testing.assert_close(stats_nc, stats_c)
+        torch.testing.assert_close(out_nc, out_c)
+        torch.testing.assert_close(outliers_nc, outliers_c)

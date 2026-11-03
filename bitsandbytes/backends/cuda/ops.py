@@ -212,6 +212,8 @@ def _(
 
 @register_kernel("bitsandbytes::int8_vectorwise_quant", "cuda")
 def _(A: torch.Tensor, threshold=0.0):
+    A = A.contiguous()
+
     if A.dtype != torch.float16:
         raise ValueError(f"A must be float16, got {A.dtype}")
     if threshold < 0.0:
