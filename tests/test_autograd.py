@@ -18,6 +18,28 @@ REQ_GRAD_NO_B_WEIGHT = [flags for flags in BOOLEAN_TRIPLES if not flags[1]]
 
 
 @pytest.mark.parametrize("device", get_available_devices())
+@pytest.mark.parametrize("shape", [(4, 5, 64), (2, 3, 5, 64)], ids=["3d", "4d"])
+def test_matmul8bitfp_high_rank_input(device, shape):
+    # MatMul8bitFp is used for training on CPU/XPU, where inputs are typically [batch, seq, features].
+    A = torch.randn(shape, device=device, requires_grad=True)
+    B = torch.empty(32, shape[-1], device=device)
+    torch.nn.init.xavier_uniform_(B)
+    B.requires_grad_(True)
+    bias = torch.randn(32, device=device, requires_grad=True)
+    grad = torch.randn(*shape[:-1], 32, device=device)
+
+    out = bnb.autograd._functions.MatMul8bitFp.apply(A, B, None, bias, bnb.MatmulLtState())
+    out.backward(grad)
+
+    A2, B2, bias2 = (t.detach().clone().requires_grad_(True) for t in (A, B, bias))
+    torch.nn.functional.linear(A2, B2, bias2).backward(grad)
+
+    torch.testing.assert_close(A.grad, A2.grad, atol=0.015, rtol=0.1)
+    torch.testing.assert_close(B.grad, B2.grad)
+    torch.testing.assert_close(bias.grad, bias2.grad)
+
+
+@pytest.mark.parametrize("device", get_available_devices())
 @pytest.mark.parametrize("dim1", [40], ids=id_formatter("dim1"))
 @pytest.mark.parametrize("dim2", [64, 0], ids=id_formatter("dim2"))
 @pytest.mark.parametrize("dim3", [32], ids=id_formatter("dim3"))

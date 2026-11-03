@@ -281,11 +281,11 @@ class MatMul8bitFp(torch.autograd.Function):
             grad_bias = grad_output.sum(0, dtype=ctx.dtype_bias)
 
         # Cast grad_output to fp16
-        if len(grad_output.shape) == 3:
+        if grad_output.dim() > 2:
             grad_output = grad_output.reshape(-1, grad_output.shape[-1]).contiguous()
 
         if req_gradB:
-            grad_B = torch.matmul(A.t(), grad_output).t()
+            grad_B = torch.matmul(A.reshape(-1, A.shape[-1]).t(), grad_output).t()
 
         if req_gradA:
             if state.CB is not None:
