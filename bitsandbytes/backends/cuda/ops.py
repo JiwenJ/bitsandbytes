@@ -992,10 +992,12 @@ str2optimizer32bit = {
     "momentum": (
         lib.cmomentum32bit_grad_32,
         lib.cmomentum32bit_grad_16,
+        lib.cmomentum32bit_grad_bf16,
     ),
     "rmsprop": (
         lib.crmsprop32bit_grad_32,
         lib.crmsprop32bit_grad_16,
+        lib.crmsprop32bit_grad_bf16,
     ),
     "lion": (
         lib.clion32bit_grad_fp32,
@@ -1005,6 +1007,7 @@ str2optimizer32bit = {
     "adagrad": (
         lib.cadagrad32bit_grad_32,
         lib.cadagrad32bit_grad_16,
+        lib.cadagrad32bit_grad_bf16,
     ),
     "lamb": (
         lib.cadam32bit_grad_fp32,
@@ -1019,6 +1022,7 @@ str2optimizer32bit = {
     "lars": (
         lib.cmomentum32bit_grad_32,
         lib.cmomentum32bit_grad_16,
+        lib.cmomentum32bit_grad_bf16,
     ),
 }
 

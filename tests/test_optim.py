@@ -171,8 +171,6 @@ def test_optimizer32bit(dim1, dim2, gtype, optim_name, device):
     if optim_name.startswith("paged_") and sys.platform == "win32":
         pytest.skip("Paged optimizers can have issues on Windows.")
 
-    if gtype == torch.bfloat16 and optim_name in ["momentum", "lars", "rmsprop"]:
-        pytest.skip()
     if dim1 == 1 and dim2 == 1:
         return
     p1 = torch.randn(dim1, dim2, device=device, dtype=gtype) * 0.1
