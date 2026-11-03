@@ -58,7 +58,7 @@ def _(
     if bias is not None:
         out += bias
 
-    return out.to(dtype or torch.float16)
+    return out.to(dtype or torch.float16).reshape(A.shape)
 
 
 @register_kernel("bitsandbytes::int8_mixed_scaled_mm", "default")

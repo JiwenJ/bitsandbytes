@@ -73,6 +73,13 @@ class TestLLMInt8Ops:
         assert out.dtype == torch.float16
         assert out.device == A.device
 
+        # Inputs with more than two dimensions keep their shape.
+        A_3d = A.view(4, 64, 256)
+        out_3d = torch.ops.bitsandbytes.int8_mm_dequant(A_3d, row_stats, col_stats)
+        assert out_3d.shape == A_3d.shape
+        torch.testing.assert_close(out_3d.view(out.shape), out)
+        opcheck(torch.ops.bitsandbytes.int8_mm_dequant, (A_3d, row_stats, col_stats))
+
         opcheck(torch.ops.bitsandbytes.int8_mm_dequant, (A, row_stats, col_stats))
 
     @pytest.mark.parametrize("device", get_available_devices())
