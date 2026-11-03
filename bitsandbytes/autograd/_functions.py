@@ -75,6 +75,9 @@ class MatmulLtState:
     has_fp16_weights = True
     use_pool = False
 
+    # Version counter and data pointer of the weight that CB/SCB were quantized from.
+    B_version: Optional[tuple[Optional[int], int]] = None
+
     # Deprecated attributes kept for downstream compatibility (TGI, vLLM).
     # These are always None and will be fully removed in the next release.
     _deprecated_fields = frozenset({"CxB", "CxBt", "formatB", "_tile_indices"})
@@ -96,6 +99,12 @@ class MatmulLtState:
 
         self.SBt = None
         self.CBt = None
+
+
+def _weight_version(B: torch.Tensor) -> tuple[Optional[int], int]:
+    # Changes when B is updated in place (optimizer.step(), load_state_dict()) or its .data is replaced.
+    # Inference tensors do not track a version counter.
+    return (None if B.is_inference() else B._version), B.data_ptr()
 
 
 class MatMul8bitLt(torch.autograd.Function):
@@ -144,15 +153,22 @@ class MatMul8bitLt(torch.autograd.Function):
 
         if state.has_fp16_weights or state.CB is None:
             has_grad = getattr(B, "grad", None) is not None
+            B_version = _weight_version(B)
             is_transposed = not B.is_contiguous() and B.shape[0] == B.stride(1)
             if is_transposed:
                 B = B.contiguous()
 
-            if (state.is_training and not has_grad) or state.CB is None or state.SCB is None:
+            if (
+                (state.is_training and not has_grad)
+                or state.CB is None
+                or state.SCB is None
+                or state.B_version != B_version
+            ):
                 state.reset_grads()
 
                 # 2. Quantize B
                 state.CB, state.SCB, _ = F.int8_vectorwise_quant(B.to(torch.float16))
+                state.B_version = B_version
 
         # Handle sparse decomposition
         if state.threshold > 0.0:
@@ -252,13 +268,20 @@ class MatMul8bitFp(torch.autograd.Function):
     def forward(ctx, A, B, out=None, bias=None, state=MatmulLtState):
         if state.has_fp16_weights or state.CB is None:
             has_grad = getattr(B, "grad", None) is not None
+            B_version = _weight_version(B)
             is_transposed = not B.is_contiguous() and B.shape[0] == B.stride(1)
             if is_transposed:
                 B = B.contiguous()
 
-            if (state.is_training and not has_grad) or state.CB is None or state.SCB is None:
+            if (
+                (state.is_training and not has_grad)
+                or state.CB is None
+                or state.SCB is None
+                or state.B_version != B_version
+            ):
                 state.reset_grads()
                 state.CB, state.SCB, _ = F.int8_vectorwise_quant(B.to(torch.float16))
+                state.B_version = B_version
                 B = state.CB
 
         CB = state.CB.data.to(A.dtype).mul_(state.SCB.unsqueeze(1).mul(1.0 / 127.0))

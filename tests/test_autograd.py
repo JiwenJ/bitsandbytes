@@ -230,3 +230,30 @@ def test_matmul_4bit(
 
             if req_grad[2]:
                 torch.testing.assert_close(gradBias1, gradBias2)
+
+
+@pytest.mark.parametrize("device", get_available_devices())
+@pytest.mark.parametrize("is_training", TRUE_FALSE, ids=id_formatter("is_training"))
+def test_matmullt_requantizes_updated_weight(device, is_training):
+    # The cached int8 weight must follow in-place updates (optimizer.step(), load_state_dict()) and
+    # .data replacement, also in eval mode and when grads are zeroed with set_to_none=False.
+    A = torch.randn(16, 64, dtype=torch.float16, device=device)
+    B = torch.randn(32, 64, dtype=torch.float16, device=device, requires_grad=is_training)
+    if is_training:
+        B.grad = torch.zeros_like(B)
+
+    def matmul(state):
+        state.is_training = is_training
+        return bnb.matmul(A, B, state=state).detach()
+
+    state = bnb.MatmulLtState()
+    out = matmul(state)
+
+    with torch.no_grad():
+        B.copy_(torch.randn_like(B))
+    out_inplace = matmul(state)
+    assert not torch.allclose(out_inplace, out)
+    torch.testing.assert_close(out_inplace, matmul(bnb.MatmulLtState()))
+
+    B.data = torch.randn_like(B)
+    torch.testing.assert_close(matmul(state), matmul(bnb.MatmulLtState()))
