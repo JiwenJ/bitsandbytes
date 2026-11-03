@@ -531,6 +531,34 @@ def test_optimizer8bit(dim1, dim2, gtype, optim_name, device):
             torch_optimizer.state[p1][name1].copy_(s.data)
 
 
+@pytest.mark.parametrize("optim_name", ["rmsprop", "adagrad"], ids=id_formatter("opt"))
+@pytest.mark.parametrize("device", get_available_devices())
+def test_optimizer8bit_1state_weight_decay(optim_name, device):
+    """8-bit RMSprop/Adagrad fold weight decay into the gradient of the update, like torch.optim.
+
+    Regression test: the CUDA 8-bit blockwise kernel added weight decay to the gradient for the
+    state update but divided the raw gradient in the parameter update.
+    """
+    torch.manual_seed(0)
+    p1 = torch.randn(64, 64, device=device) * 0.1
+    p2 = p1.clone()
+    if optim_name == "rmsprop":
+        torch_optimizer = torch.optim.RMSprop([p1], lr=0.01, alpha=0.9, weight_decay=0.1)
+        bnb_optimizer = bnb.optim.RMSprop8bit([p2], lr=0.01, alpha=0.9, weight_decay=0.1)
+    else:
+        torch_optimizer = torch.optim.Adagrad([p1], lr=0.01, weight_decay=0.1)
+        bnb_optimizer = bnb.optim.Adagrad8bit([p2], lr=0.01, weight_decay=0.1)
+
+    # The first step starts from a zero state, so its update does not depend on the 8-bit quantization.
+    p1.grad = torch.randn_like(p1) * 0.01
+    p2.grad = p1.grad.clone()
+    torch_optimizer.step()
+    bnb_optimizer.step()
+
+    assert bnb_optimizer.state[p2]["state1"].dtype == torch.uint8
+    torch.testing.assert_close(p1, p2)
+
+
 optimizer_names_benchmark = [
     "adam8bit_blockwise",
     "paged_adam8bit_blockwise",

@@ -1162,6 +1162,8 @@ __launch_bounds__(256, 3) __global__ void kOptimizerStatic8bit1StateBlockwise(
     int valid_items = 0;
     float g_val = 0.0f;
     float s1_vals[N_PER_TH];
+    // Gradient after gnorm scaling and coupled weight decay, reused by the RMSPROP/ADAGRAD parameter update.
+    float g_wd_vals[N_PER_TH];
     // 2-5%
     const int lane_id = threadIdx.x % LANES;
     float new_local_abs_max1 = -FLT_MAX;
@@ -1258,6 +1260,7 @@ __launch_bounds__(256, 3) __global__ void kOptimizerStatic8bit1StateBlockwise(
                     s1_vals[j] = s1_vals[j] + (g_val * g_val);
                     break;
                 }
+                g_wd_vals[j] = g_val;
             }
 
             new_local_abs_max1 = fmaxf(new_local_abs_max1, fabsf(s1_vals[j]));
@@ -1288,11 +1291,11 @@ __launch_bounds__(256, 3) __global__ void kOptimizerStatic8bit1StateBlockwise(
                     p_vals[j] = ((float)p_vals[j]) - ((float)g_vals[j]);
                     break;
                 case RMSPROP:
-                    g_val = g_vals[j];
+                    g_val = g_wd_vals[j];
                     p_vals[j] = ((float)p_vals[j]) - lr * (__fdividef(g_val, sqrtf(s1_vals[j]) + eps));
                     break;
                 case ADAGRAD:
-                    g_val = g_vals[j];
+                    g_val = g_wd_vals[j];
                     p_vals[j] = ((float)p_vals[j]) - lr * (__fdividef(g_val, sqrtf(s1_vals[j]) + eps));
                     break;
                 }
