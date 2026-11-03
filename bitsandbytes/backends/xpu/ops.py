@@ -302,4 +302,15 @@ elif triton_available:
     register_kernel("bitsandbytes::optimizer_update_8bit_blockwise", "xpu")(triton_ops.optimizer_update_8bit_blockwise)
     register_kernel("bitsandbytes::optimizer_update_32bit", "xpu")(triton_ops.optimizer_update_32bit)
 else:
-    logger.warning("Register pytorch bitsandbytes kernels for XPU because no native library or triton packages found.")
+    logger.warning("No native library or triton packages found for XPU, falling back to the PyTorch implementations.")
+
+if not triton_available:
+    from ..cpu.ops import _optimizer_update_8bit_blockwise_cpu
+
+    @register_kernel("bitsandbytes::optimizer_update_8bit_blockwise", "xpu")
+    def _(optimizer_name: str, g: torch.Tensor, p: torch.Tensor, state1: torch.Tensor, *args, **kwargs) -> None:
+        # The default backend has no 8-bit blockwise optimizer. The pure PyTorch one from the CPU backend
+        # works on XPU tensors, but not with paged states, which show up as CPU tensors.
+        if state1.device != g.device:
+            raise NotImplementedError("Paged 8-bit optimizers on XPU require triton.")
+        _optimizer_update_8bit_blockwise_cpu(optimizer_name, g, p, state1, *args, **kwargs)
