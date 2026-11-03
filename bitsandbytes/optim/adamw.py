@@ -36,6 +36,7 @@ class AdamW(Optimizer2State):
                 The weight decay value for the optimizer.
             amsgrad (`bool`, defaults to `False`):
                 Whether to use the [AMSGrad](https://hf.co/papers/1904.09237) variant of Adam that uses the maximum of past squared gradients instead.
+                Note: This parameter is not supported in AdamW and must be False.
             optim_bits (`int`, defaults to 32):
                 The number of bits of the optimizer state.
             args (`object`, defaults to `None`):
@@ -45,6 +46,10 @@ class AdamW(Optimizer2State):
             is_paged (`bool`, defaults to `False`):
                 Whether the optimizer is a paged optimizer or not.
         """
+        # Validate unsupported parameters
+        if amsgrad:
+            raise ValueError("AdamW does not support amsgrad=True")
+
         super().__init__(
             "adam",
             params,
@@ -153,6 +158,7 @@ class AdamW32bit(Optimizer2State):
                 The weight decay value for the optimizer.
             amsgrad (`bool`, defaults to `False`):
                 Whether to use the [AMSGrad](https://hf.co/papers/1904.09237) variant of Adam that uses the maximum of past squared gradients instead.
+                Note: This parameter is not supported in AdamW32bit and must be False.
             optim_bits (`int`, defaults to 32):
                 The number of bits of the optimizer state.
             args (`object`, defaults to `None`):
@@ -162,6 +168,10 @@ class AdamW32bit(Optimizer2State):
             is_paged (`bool`, defaults to `False`):
                 Whether the optimizer is a paged optimizer or not.
         """
+        # Validate unsupported parameters
+        if amsgrad:
+            raise ValueError("AdamW32bit does not support amsgrad=True")
+
         super().__init__(
             "adam",
             params,
@@ -205,6 +215,7 @@ class PagedAdamW(Optimizer2State):
                 The weight decay value for the optimizer.
             amsgrad (`bool`, defaults to `False`):
                 Whether to use the [AMSGrad](https://hf.co/papers/1904.09237) variant of Adam that uses the maximum of past squared gradients instead.
+                Note: This parameter is not supported in PagedAdamW and must be False.
             optim_bits (`int`, defaults to 32):
                 The number of bits of the optimizer state.
             args (`object`, defaults to `None`):
@@ -212,6 +223,10 @@ class PagedAdamW(Optimizer2State):
             min_8bit_size (`int`, defaults to 4096):
                 The minimum number of elements of the parameter tensors for 8-bit optimization.
         """
+        # Validate unsupported parameters
+        if amsgrad:
+            raise ValueError("PagedAdamW does not support amsgrad=True")
+
         super().__init__(
             "adam",
             params,
@@ -316,6 +331,7 @@ class PagedAdamW32bit(Optimizer2State):
                 The weight decay value for the optimizer.
             amsgrad (`bool`, defaults to `False`):
                 Whether to use the [AMSGrad](https://hf.co/papers/1904.09237) variant of Adam that uses the maximum of past squared gradients instead.
+                Note: This parameter is not supported in PagedAdamW32bit and must be False.
             optim_bits (`int`, defaults to 32):
                 The number of bits of the optimizer state.
             args (`object`, defaults to `None`):
@@ -323,6 +339,10 @@ class PagedAdamW32bit(Optimizer2State):
             min_8bit_size (`int`, defaults to 4096):
                 The minimum number of elements of the parameter tensors for 8-bit optimization.
         """
+        # Validate unsupported parameters
+        if amsgrad:
+            raise ValueError("PagedAdamW32bit does not support amsgrad=True")
+
         super().__init__(
             "adam",
             params,

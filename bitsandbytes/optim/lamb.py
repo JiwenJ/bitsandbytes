@@ -31,6 +31,7 @@ class LAMB(Optimizer2State):
                 The learning rate.
             bias_correction (`bool`, defaults to `True`):
                 Whether to apply bias correction to the first and second-order moments.
+                Note: LAMB always applies bias correction, so this must be True.
             betas (`tuple(float, float)`, defaults to (0.9, 0.999)):
                 The beta values are the decay rates of the first and second-order moment of the optimizer.
             eps (`float`, defaults to 1e-8):
@@ -39,8 +40,10 @@ class LAMB(Optimizer2State):
                 The weight decay value for the optimizer.
             amsgrad (`bool`, defaults to `False`):
                 Whether to use the [AMSGrad](https://hf.co/papers/1904.09237) variant of Adam that uses the maximum of past squared gradients instead.
+                Note: This parameter is not supported in LAMB and must be False.
             adam_w_mode (`bool`, defaults to `True`):
                 Whether to use the AdamW variant.
+                Note: LAMB always uses decoupled (AdamW-style) weight decay, so this must be True.
             optim_bits (`int`, defaults to 32):
                 The number of bits of the optimizer state.
             args (`object`, defaults to `None`):
@@ -50,6 +53,16 @@ class LAMB(Optimizer2State):
             max_unorm (`float`, defaults to 1.0):
                 The maximum gradient norm.
         """
+        # Validate unsupported parameters
+        if amsgrad:
+            raise ValueError("LAMB does not support amsgrad=True")
+
+        if not bias_correction:
+            raise ValueError("LAMB does not support bias_correction=False")
+
+        if not adam_w_mode:
+            raise ValueError("LAMB does not support adam_w_mode=False")
+
         super().__init__(
             "lamb",
             params,
@@ -89,6 +102,7 @@ class LAMB8bit(Optimizer2State):
                 The learning rate.
             bias_correction (`bool`, defaults to `True`):
                 Whether to apply bias correction to the first and second-order moments.
+                Note: LAMB8bit always applies bias correction, so this must be True.
             betas (`tuple(float, float)`, defaults to (0.9, 0.999)):
                 The beta values are the decay rates of the first and second-order moment of the optimizer.
             eps (`float`, defaults to 1e-8):
@@ -100,6 +114,7 @@ class LAMB8bit(Optimizer2State):
                 Note: This parameter is not supported in LAMB8bit and must be False.
             adam_w_mode (`bool`, defaults to `True`):
                 Whether to use the AdamW variant.
+                Note: LAMB8bit always uses decoupled (AdamW-style) weight decay, so this must be True.
             args (`object`, defaults to `None`):
                 An object with additional arguments.
             min_8bit_size (`int`, defaults to 4096):
@@ -113,6 +128,12 @@ class LAMB8bit(Optimizer2State):
         # Validate unsupported parameters
         if amsgrad:
             raise ValueError("LAMB8bit does not support amsgrad=True")
+
+        if not bias_correction:
+            raise ValueError("LAMB8bit does not support bias_correction=False")
+
+        if not adam_w_mode:
+            raise ValueError("LAMB8bit does not support adam_w_mode=False")
 
         if max_unorm != 1.0:
             # We allow the default value of 1.0 to maintain compatibility with the function
@@ -159,6 +180,7 @@ class LAMB32bit(Optimizer2State):
                 The learning rate.
             bias_correction (`bool`, defaults to `True`):
                 Whether to apply bias correction to the first and second-order moments.
+                Note: LAMB32bit always applies bias correction, so this must be True.
             betas (`tuple(float, float)`, defaults to (0.9, 0.999)):
                 The beta values are the decay rates of the first and second-order moment of the optimizer.
             eps (`float`, defaults to 1e-8):
@@ -167,8 +189,10 @@ class LAMB32bit(Optimizer2State):
                 The weight decay value for the optimizer.
             amsgrad (`bool`, defaults to `False`):
                 Whether to use the [AMSGrad](https://hf.co/papers/1904.09237) variant of Adam that uses the maximum of past squared gradients instead.
+                Note: This parameter is not supported in LAMB32bit and must be False.
             adam_w_mode (`bool`, defaults to `True`):
                 Whether to use the AdamW variant.
+                Note: LAMB32bit always uses decoupled (AdamW-style) weight decay, so this must be True.
             args (`object`, defaults to `None`):
                 An object with additional arguments.
             min_8bit_size (`int`, defaults to 4096):
@@ -176,6 +200,16 @@ class LAMB32bit(Optimizer2State):
             max_unorm (`float`, defaults to 1.0):
                 The maximum gradient norm.
         """
+        # Validate unsupported parameters
+        if amsgrad:
+            raise ValueError("LAMB32bit does not support amsgrad=True")
+
+        if not bias_correction:
+            raise ValueError("LAMB32bit does not support bias_correction=False")
+
+        if not adam_w_mode:
+            raise ValueError("LAMB32bit does not support adam_w_mode=False")
+
         super().__init__(
             "lamb",
             params,

@@ -722,6 +722,46 @@ def test_lamb8bit_rejects_amsgrad():
     bnb.optim.LAMB8bit(p)
 
 
+@pytest.mark.parametrize(
+    "optim_cls",
+    [
+        bnb.optim.Adam,
+        bnb.optim.Adam32bit,
+        bnb.optim.PagedAdam,
+        bnb.optim.PagedAdam32bit,
+        bnb.optim.AdamW,
+        bnb.optim.AdamW32bit,
+        bnb.optim.PagedAdamW,
+        bnb.optim.PagedAdamW32bit,
+        bnb.optim.LAMB,
+        bnb.optim.LAMB32bit,
+    ],
+    ids=lambda c: c.__name__,
+)
+def test_rejects_amsgrad(optim_cls):
+    # amsgrad is unused by the base optimizer; mirror the 8-bit guards (relates to #1261).
+    p = [torch.nn.Parameter(torch.randn(8, 8))]
+    with pytest.raises(ValueError):
+        optim_cls(p, amsgrad=True)
+    # default (amsgrad=False) still constructs
+    optim_cls(p)
+
+
+@pytest.mark.parametrize(
+    "optim_cls", [bnb.optim.LAMB, bnb.optim.LAMB8bit, bnb.optim.LAMB32bit], ids=lambda c: c.__name__
+)
+def test_lamb_rejects_bias_correction_and_adam_w_mode(optim_cls):
+    # The update always applies bias correction and decoupled weight decay, so turning
+    # either off was silently ignored (relates to #1261).
+    p = [torch.nn.Parameter(torch.randn(8, 8))]
+    with pytest.raises(ValueError):
+        optim_cls(p, bias_correction=False)
+    with pytest.raises(ValueError):
+        optim_cls(p, adam_w_mode=False)
+    # defaults (bias_correction=True, adam_w_mode=True) still construct
+    optim_cls(p)
+
+
 def test_lamb8bit_rejects_non_default_max_unorm():
     # The 8-bit blockwise update does not implement update-norm clipping, so a
     # non-default max_unorm would be silently ignored; reject it instead.
