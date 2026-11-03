@@ -158,6 +158,11 @@ class MatMul8bitLt(torch.autograd.Function):
         if state.threshold > 0.0:
             state.idx = outlier_cols
 
+            # Zero out the outlier columns in the transposed 8bit inputs. Backward adds their
+            # contribution to grad_B in original precision from subA.
+            if CAt is not None:
+                CAt = CAt.index_fill(1, outlier_cols, 0)
+
             # Mixed Int8 Matmul + Dequant + Bias
             output, subA = torch.ops.bitsandbytes.int8_mixed_scaled_mm(
                 A,
