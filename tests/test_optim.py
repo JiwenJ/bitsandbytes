@@ -292,6 +292,30 @@ def test_lion32bit_weight_decay(dim1, dim2, gtype, device):
             p2.copy_(p1.data)
 
 
+@pytest.mark.parametrize("device", get_available_devices(), ids=id_formatter("device"))
+def test_lars32bit_weight_decay(device):
+    """32-bit LARS computes the trust ratio from the weight-decayed update, like PytorchLARS.
+
+    Regression test: the CUDA precondition kernel computed the update norm without weight
+    decay, so with weight_decay > 0 the clipping ratio did not match the applied update.
+    """
+    torch.manual_seed(0)
+    p1 = torch.randn(1024, 32, device=device) * 0.1
+    p2 = p1.clone()
+    torch_optimizer = bnb.optim.PytorchLARS([p1], lr=0.1, momentum=0.9, weight_decay=0.1)
+    bnb_optimizer = bnb.optim.LARS([p2], lr=0.1, momentum=0.9, weight_decay=0.1)
+
+    for _ in range(3):
+        g = torch.randn_like(p1) * 0.01
+        p1.grad = g.clone()
+        p2.grad = g.clone()
+        torch_optimizer.step()
+        bnb_optimizer.step()
+
+        torch.testing.assert_close(torch_optimizer.state[p1]["momentum_buffer"], bnb_optimizer.state[p2]["state1"])
+        torch.testing.assert_close(p1, p2)
+
+
 @pytest.mark.parametrize("dim1", [1024], ids=id_formatter("dim1"))
 @pytest.mark.parametrize("dim2", [32, 1024, 4097], ids=id_formatter("dim2"))
 @pytest.mark.parametrize("gtype", [torch.float32, torch.float16], ids=describe_dtype)

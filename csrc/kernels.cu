@@ -737,6 +737,7 @@ __launch_bounds__(BLOCK_SIZE / NUM_VALS, 1) __global__ void kPreconditionOptimiz
     int valid_items = 0;
 
     T g_vals[NUM_VALS];
+    T p_vals[NUM_VALS];
 
     float s1_vals[NUM_VALS];
 
@@ -757,10 +758,17 @@ __launch_bounds__(BLOCK_SIZE / NUM_VALS, 1) __global__ void kPreconditionOptimiz
         Load(temp_storage.load).Load(&(g[i]), g_vals, valid_items, 0.0f);
         __syncthreads();
         LoadFloat(temp_storage.loadf).Load(&(state1[i]), s1_vals, valid_items, 0.0f);
+        __syncthreads();
+        Load(temp_storage.load).Load(&(p[i]), p_vals, valid_items, 0.0f);
 
 #pragma unroll NUM_VALS
-        for (unsigned int j = 0; j < NUM_VALS; j++)
+        for (unsigned int j = 0; j < NUM_VALS; j++) {
             g_vals[j] = gnorm_scale * ((float)g_vals[j]);
+            // Fold in coupled weight decay like kOptimizer32bit1State, so the update norm
+            // is computed from the same gradient as the update (LION decays decoupled).
+            if (weight_decay > 0.0f && OPTIMIZER != LION)
+                g_vals[j] = (float)g_vals[j] + (((float)p_vals[j]) * weight_decay);
+        }
 
 #pragma unroll NUM_VALS
         for (unsigned int j = 0; j < NUM_VALS; j++) {
