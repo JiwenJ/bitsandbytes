@@ -8,6 +8,7 @@ from itertools import chain
 import logging
 from typing import Optional
 import warnings
+import weakref
 
 import torch
 
@@ -111,7 +112,15 @@ class GlobalOptimManager:
                     self.pid2config[id(p)] = key_value_dict
 
     def register_module_override(self, module, param_name, config):
-        self.module_weight_config_triple.append((module, param_name, config))
+        # Hold the module by weak reference so that registering an override (as done by
+        # StableEmbedding/Embedding) does not keep the module alive. A new override for the
+        # same (module, param_name) replaces the old one; entries of dead modules are dropped.
+        self.module_weight_config_triple = [
+            (module_ref, name, cfg)
+            for module_ref, name, cfg in self.module_weight_config_triple
+            if module_ref() is not None and not (module_ref() is module and name == param_name)
+        ]
+        self.module_weight_config_triple.append((weakref.ref(module), param_name, config))
 
 
 class Optimizer8bit(torch.optim.Optimizer):
@@ -284,7 +293,14 @@ class Optimizer8bit(torch.optim.Optimizer):
                                 self.state[p][k] = v.to(p.device)
 
     def check_overrides(self):
-        for module, attr, config in self.mng.module_weight_config_triple:
+        # Overrides hold their module by weak reference; drop the ones whose module is gone.
+        self.mng.module_weight_config_triple = [
+            entry for entry in self.mng.module_weight_config_triple if entry[0]() is not None
+        ]
+        for module_ref, attr, config in self.mng.module_weight_config_triple:
+            module = module_ref()
+            if module is None:
+                continue
             pmodule = getattr(module, attr)
             assert pmodule is not None
             assert isinstance(pmodule, torch.Tensor) or isinstance(pmodule, torch.Parameter)

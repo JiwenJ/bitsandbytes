@@ -338,6 +338,35 @@ def test_global_config(dim1, dim2, gtype, device):
         assert adam2.state[p3]["state2"].dtype == torch.uint8
 
 
+def test_module_override_does_not_keep_module_alive():
+    # register_module_override (called by StableEmbedding/Embedding.__init__) kept a strong
+    # reference to every registered module, so their weights could never be freed.
+    import gc
+    import weakref
+
+    mng = bnb.optim.GlobalOptimManager.get_instance()
+    mng.initialize()
+
+    dead = bnb.nn.StableEmbedding(1024, 64)
+    dead_ref = weakref.ref(dead)
+    live = bnb.nn.Embedding(128, 64)
+    # registering the same (module, param_name) again replaces the existing entry
+    mng.register_module_override(live, "weight", {"optim_bits": 32})
+    assert len(mng.module_weight_config_triple) == 2
+
+    del dead
+    gc.collect()
+    assert dead_ref() is None
+
+    # the first step drops the override of the collected module and applies the live one
+    adam = bnb.optim.Adam8bit(live.parameters())
+    live.weight.grad = torch.randn_like(live.weight)
+    adam.step()
+    assert len(mng.module_weight_config_triple) == 1
+    assert adam.state[live.weight]["state1"].dtype == torch.float32
+    mng.initialize()
+
+
 @pytest.mark.parametrize("device", get_available_devices())
 @pytest.mark.skipif(not get_available_devices(), reason="No device")
 def test_override_config_after_register(device):
