@@ -741,3 +741,34 @@ def test_adagrad8bit_rejects_non_8_optim_bits():
         bnb.optim.Adagrad8bit(p, optim_bits=32)
     # default (optim_bits=8) still constructs
     bnb.optim.Adagrad8bit(p)
+
+
+@pytest.mark.parametrize(
+    "optim_cls", [bnb.optim.RMSprop, bnb.optim.RMSprop8bit, bnb.optim.RMSprop32bit], ids=lambda c: c.__name__
+)
+def test_rmsprop_rejects_momentum(optim_cls):
+    # momentum was accepted but no backend implements it, so it was silently ignored.
+    p = torch.nn.Parameter(torch.randn(64, 80))
+    with pytest.raises(NotImplementedError):
+        optim_cls([p], momentum=0.9)
+    # default (momentum=0) still constructs and steps
+    opt = optim_cls([p])
+    p.grad = torch.randn_like(p)
+    opt.step()
+    assert torch.isfinite(p).all()
+
+
+@pytest.mark.parametrize("optim_cls", [bnb.optim.SGD, bnb.optim.SGD8bit, bnb.optim.SGD32bit], ids=lambda c: c.__name__)
+def test_sgd_rejects_nesterov_and_dampening(optim_cls):
+    # nesterov was never passed to the update and no backend implements dampening,
+    # so both were silently ignored.
+    p = torch.nn.Parameter(torch.randn(64, 80))
+    with pytest.raises(NotImplementedError):
+        optim_cls([p], lr=0.01, momentum=0.9, nesterov=True)
+    with pytest.raises(NotImplementedError):
+        optim_cls([p], lr=0.01, momentum=0.9, dampening=0.1)
+    # defaults (dampening=0, nesterov=False) still construct and step
+    opt = optim_cls([p], lr=0.01, momentum=0.9)
+    p.grad = torch.randn_like(p)
+    opt.step()
+    assert torch.isfinite(p).all()

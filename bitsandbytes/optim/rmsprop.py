@@ -35,6 +35,7 @@ class RMSprop(Optimizer1State):
                 The weight decay value for the optimizer.
             momentum (`float`, defaults to 0):
                 The momentum value speeds up the optimizer by taking bigger steps.
+                Note: This parameter is not supported in RMSprop and must be 0.
             centered (`bool`, defaults to `False`):
                 Whether the gradients are normalized by the variance. If `True`, it can help training at the expense of additional compute.
             optim_bits (`int`, defaults to 32):
@@ -48,6 +49,8 @@ class RMSprop(Optimizer1State):
             raise NotImplementedError("RMSprop with alpha==0.0 is not supported!")
         if centered:
             raise NotImplementedError("Centered RMSprop is not supported!")
+        if momentum != 0:
+            raise NotImplementedError("RMSprop with momentum is not supported!")
         super().__init__(
             "rmsprop",
             params,
@@ -90,6 +93,7 @@ class RMSprop8bit(Optimizer1State):
                 The weight decay value for the optimizer.
             momentum (`float`, defaults to 0):
                 The momentum value speeds up the optimizer by taking bigger steps.
+                Note: This parameter is not supported in RMSprop8bit and must be 0.
             centered (`bool`, defaults to `False`):
                 Whether the gradients are normalized by the variance. If `True`, it can help training at the expense of additional compute.
             args (`object`, defaults to `None`):
@@ -101,6 +105,8 @@ class RMSprop8bit(Optimizer1State):
             raise NotImplementedError("RMSprop with alpha==0.0 is not supported!")
         if centered:
             raise NotImplementedError("Centered RMSprop is not supported!")
+        if momentum != 0:
+            raise NotImplementedError("RMSprop with momentum is not supported!")
         super().__init__(
             "rmsprop",
             params,
@@ -143,6 +149,7 @@ class RMSprop32bit(Optimizer1State):
                 The weight decay value for the optimizer.
             momentum (`float`, defaults to 0):
                 The momentum value speeds up the optimizer by taking bigger steps.
+                Note: This parameter is not supported in RMSprop32bit and must be 0.
             centered (`bool`, defaults to `False`):
                 Whether the gradients are normalized by the variance. If `True`, it can help training at the expense of additional compute.
             optim_bits (`int`, defaults to 32):
@@ -157,6 +164,8 @@ class RMSprop32bit(Optimizer1State):
             raise NotImplementedError("RMSprop with alpha==0.0 is not supported!")
         if centered:
             raise NotImplementedError("Centered RMSprop is not supported!")
+        if momentum != 0:
+            raise NotImplementedError("RMSprop with momentum is not supported!")
         super().__init__(
             "rmsprop",
             params,

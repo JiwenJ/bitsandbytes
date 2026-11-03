@@ -34,6 +34,8 @@ class Adam(Optimizer2State):
                 The epsilon value prevents division by zero in the optimizer.
             weight_decay (`float`, defaults to 0.0):
                 The weight decay value for the optimizer.
+                Note: Weight decay is decoupled from the gradient (AdamW-style, `p *= 1 - lr * weight_decay`),
+                unlike the L2 penalty added to the gradient by `torch.optim.Adam`.
             amsgrad (`bool`, defaults to `False`):
                 Whether to use the [AMSGrad](https://hf.co/papers/1904.09237) variant of Adam that uses the maximum of past squared gradients instead.
             optim_bits (`int`, defaults to 32):
@@ -87,6 +89,8 @@ class Adam8bit(Optimizer2State):
                 The epsilon value prevents division by zero in the optimizer.
             weight_decay (`float`, defaults to 0.0):
                 The weight decay value for the optimizer.
+                Note: Weight decay is decoupled from the gradient (AdamW-style, `p *= 1 - lr * weight_decay`),
+                unlike the L2 penalty added to the gradient by `torch.optim.Adam`.
             amsgrad (`bool`, defaults to `False`):
                 Whether to use the [AMSGrad](https://hf.co/papers/1904.09237) variant of Adam that uses the maximum of past squared gradients instead.
                 Note: This parameter is not supported in Adam8bit and must be False.
@@ -151,6 +155,8 @@ class Adam32bit(Optimizer2State):
                 The epsilon value prevents division by zero in the optimizer.
             weight_decay (`float`, defaults to 0.0):
                 The weight decay value for the optimizer.
+                Note: Weight decay is decoupled from the gradient (AdamW-style, `p *= 1 - lr * weight_decay`),
+                unlike the L2 penalty added to the gradient by `torch.optim.Adam`.
             amsgrad (`bool`, defaults to `False`):
                 Whether to use the [AMSGrad](https://hf.co/papers/1904.09237) variant of Adam that uses the maximum of past squared gradients instead.
             optim_bits (`int`, defaults to 32):
@@ -204,6 +210,8 @@ class PagedAdam(Optimizer2State):
                 The epsilon value prevents division by zero in the optimizer.
             weight_decay (`float`, defaults to 0.0):
                 The weight decay value for the optimizer.
+                Note: Weight decay is decoupled from the gradient (AdamW-style, `p *= 1 - lr * weight_decay`),
+                unlike the L2 penalty added to the gradient by `torch.optim.Adam`.
             amsgrad (`bool`, defaults to `False`):
                 Whether to use the [AMSGrad](https://hf.co/papers/1904.09237) variant of Adam that uses the maximum of past squared gradients instead.
             optim_bits (`int`, defaults to 32):
@@ -257,6 +265,8 @@ class PagedAdam8bit(Optimizer2State):
                 The epsilon value prevents division by zero in the optimizer.
             weight_decay (`float`, defaults to 0.0):
                 The weight decay value for the optimizer.
+                Note: Weight decay is decoupled from the gradient (AdamW-style, `p *= 1 - lr * weight_decay`),
+                unlike the L2 penalty added to the gradient by `torch.optim.Adam`.
             amsgrad (`bool`, defaults to `False`):
                 Whether to use the [AMSGrad](https://hf.co/papers/1904.09237) variant of Adam that uses the maximum of past squared gradients instead.
                 Note: This parameter is not supported in PagedAdam8bit and must be False.
@@ -321,6 +331,8 @@ class PagedAdam32bit(Optimizer2State):
                 The epsilon value prevents division by zero in the optimizer.
             weight_decay (`float`, defaults to 0.0):
                 The weight decay value for the optimizer.
+                Note: Weight decay is decoupled from the gradient (AdamW-style, `p *= 1 - lr * weight_decay`),
+                unlike the L2 penalty added to the gradient by `torch.optim.Adam`.
             amsgrad (`bool`, defaults to `False`):
                 Whether to use the [AMSGrad](https://hf.co/papers/1904.09237) variant of Adam that uses the maximum of past squared gradients instead.
             optim_bits (`int`, defaults to 32):

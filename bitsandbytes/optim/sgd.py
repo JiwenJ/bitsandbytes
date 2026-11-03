@@ -30,10 +30,12 @@ class SGD(Optimizer1State):
                 The momentum value speeds up the optimizer by taking bigger steps.
             dampening (`float`, defaults to 0):
                 The dampening value reduces the momentum of the optimizer.
+                Note: This parameter is not supported in SGD and must be 0.
             weight_decay (`float`, defaults to 0.0):
                 The weight decay value for the optimizer.
             nesterov (`bool`, defaults to `False`):
                 Whether to use Nesterov momentum.
+                Note: This parameter is not supported in SGD and must be False.
             optim_bits (`int`, defaults to 32):
                 The number of bits of the optimizer state.
             args (`object`, defaults to `None`):
@@ -43,6 +45,10 @@ class SGD(Optimizer1State):
         """
         if momentum == 0:
             raise NotImplementedError("SGD without momentum is not supported!")
+        if dampening != 0:
+            raise NotImplementedError("SGD with dampening is not supported!")
+        if nesterov:
+            raise NotImplementedError("SGD with Nesterov momentum is not supported!")
         super().__init__(
             "momentum",
             params,
@@ -80,10 +86,12 @@ class SGD8bit(Optimizer1State):
                 The momentum value speeds up the optimizer by taking bigger steps.
             dampening (`float`, defaults to 0):
                 The dampening value reduces the momentum of the optimizer.
+                Note: This parameter is not supported in SGD8bit and must be 0.
             weight_decay (`float`, defaults to 0.0):
                 The weight decay value for the optimizer.
             nesterov (`bool`, defaults to `False`):
                 Whether to use Nesterov momentum.
+                Note: This parameter is not supported in SGD8bit and must be False.
             args (`object`, defaults to `None`):
                 An object with additional arguments.
             min_8bit_size (`int`, defaults to 4096):
@@ -91,6 +99,10 @@ class SGD8bit(Optimizer1State):
         """
         if momentum == 0:
             raise NotImplementedError("SGD without momentum is not supported!")
+        if dampening != 0:
+            raise NotImplementedError("SGD with dampening is not supported!")
+        if nesterov:
+            raise NotImplementedError("SGD with Nesterov momentum is not supported!")
         super().__init__(
             "momentum",
             params,
@@ -128,10 +140,12 @@ class SGD32bit(Optimizer1State):
                 The momentum value speeds up the optimizer by taking bigger steps.
             dampening (`float`, defaults to 0):
                 The dampening value reduces the momentum of the optimizer.
+                Note: This parameter is not supported in SGD32bit and must be 0.
             weight_decay (`float`, defaults to 0.0):
                 The weight decay value for the optimizer.
             nesterov (`bool`, defaults to `False`):
                 Whether to use Nesterov momentum.
+                Note: This parameter is not supported in SGD32bit and must be False.
             args (`object`, defaults to `None`):
                 An object with additional arguments.
             min_8bit_size (`int`, defaults to 4096):
@@ -139,6 +153,10 @@ class SGD32bit(Optimizer1State):
         """
         if momentum == 0:
             raise NotImplementedError("SGD without momentum is not supported!")
+        if dampening != 0:
+            raise NotImplementedError("SGD with dampening is not supported!")
+        if nesterov:
+            raise NotImplementedError("SGD with Nesterov momentum is not supported!")
         super().__init__(
             "momentum",
             params,
