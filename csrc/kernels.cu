@@ -1222,6 +1222,8 @@ __launch_bounds__(256, 3) __global__ void kOptimizerStatic8bit1StateBlockwise(
         for (unsigned int j = 0; j < N_PER_TH; j++) {
             g_val = float(g_vals[j]);
             g_val *= gnorm_scale;
+            // dequantize before the skip check so that skipped elements keep their previous state
+            s1_vals[j] = smem_quantiles1[lane_id][c1s[j]] * absmax1[i / BLOCK_SIZE];
             if (!skip_zeros || (skip_zeros && ((float)g_vals[j] != 0.0f))) {
                 if (weight_decay > 0.0f) {
                     switch (OPTIMIZER) {
@@ -1235,8 +1237,6 @@ __launch_bounds__(256, 3) __global__ void kOptimizerStatic8bit1StateBlockwise(
                         break;
                     }
                 }
-
-                s1_vals[j] = smem_quantiles1[lane_id][c1s[j]] * absmax1[i / BLOCK_SIZE];
 
                 switch (OPTIMIZER) {
                 case MOMENTUM:
