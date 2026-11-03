@@ -918,7 +918,7 @@ def _optimizer_update_1state_8bit_blockwise_triton_kernel(
 
     # 3. Optimizer-specific updates
     # LION
-    if weight_decay > 0.0 and OPTIMIZER_ID == 2:
+    if weight_decay > 0.0 and OPTIMIZER_ID == 4:
         p *= 1.0 - lr * weight_decay
     # Apply weight decay for momentum, rmsprop, adagrad
     elif weight_decay > 0.0:
