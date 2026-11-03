@@ -1141,6 +1141,10 @@ def optimizer_update_32bit(
 
     param_norm = 0.0
     if max_unorm > 0.0:
+        if optimizer_name == "ademamix":
+            # Update-norm clipping is not implemented for AdEMAMix: the update kernels ignore the
+            # clipping scale, and the precondition kernels lack beta3/alpha to compute the update norm.
+            raise NotImplementedError("max_unorm > 0 is not supported for the AdEMAMix optimizer.")
         param_norm = torch.norm(p.data.float())
 
     is_on_gpu([g, p, state1, state2, unorm_vec])

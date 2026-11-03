@@ -575,6 +575,21 @@ def test_benchmark_blockwise(dim1, dim2, gtype, optim_name, device):
     # assert s < 3.9
 
 
+def test_ademamix32bit_rejects_max_unorm():
+    # The 32-bit AdEMAMix update does not implement update-norm clipping, so a positive
+    # max_unorm must raise instead of being silently ignored.
+    p = torch.randn(64, 64)
+    g = torch.randn_like(p)
+    state1 = torch.zeros((2, *p.shape))
+    state2 = torch.zeros_like(p)
+    kwargs = dict(beta1=0.9, eps=1e-8, step=1, lr=1e-3, state2=state2, beta2=0.999, beta3=0.9999, alpha=5.0)
+    with pytest.raises(NotImplementedError):
+        F.optimizer_update_32bit("ademamix", g, p, state1, unorm_vec=torch.zeros(1), max_unorm=0.02, **kwargs)
+    # max_unorm=0 (the default) still updates
+    F.optimizer_update_32bit("ademamix", g, p, state1, **kwargs)
+    assert state2.abs().sum() > 0
+
+
 ademamix_state_dict_opts = [
     ("AdEMAMix8bit", lambda p: bnb.optim.AdEMAMix8bit(p, lr=1e-3)),
     ("AdEMAMix32bit", lambda p: bnb.optim.AdEMAMix(p, lr=1e-3)),

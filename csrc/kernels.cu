@@ -895,7 +895,8 @@ __launch_bounds__(TH, 1) __global__ void kOptimizer32bit1State(
                     break;
                 case ADAGRAD:
                     s1_vals[j] = s1_vals[j] + ((float)g_vals[j]) * ((float)g_vals[j]);
-                    p_vals[j] = ((float)p_vals[j]) - lr * __fdividef((float)g_vals[j], sqrtf((float)s1_vals[j]) + eps);
+                    p_vals[j] = ((float)p_vals[j]) -
+                                update_scale * (lr * __fdividef((float)g_vals[j], sqrtf((float)s1_vals[j]) + eps));
                     break;
                 }
             }
