@@ -133,3 +133,22 @@ def test_override_invalid_format(monkeypatch, cuda120_spec):
     monkeypatch.setenv("BNB_CUDA_VERSION", "12.4")
     with pytest.raises(RuntimeError, match="digits only"):
         get_cuda_bnb_library_path(cuda120_spec)
+
+
+def test_diagnostics_rocm_torch_without_gpu(monkeypatch, capsys):
+    """`python -m bitsandbytes` with a ROCm build of torch but no visible GPU reports CPU-only instead of raising."""
+    import torch
+
+    from bitsandbytes.diagnostics import main as diagnostics
+
+    def sanity_check():
+        raise RuntimeError("No HIP GPUs are available")
+
+    monkeypatch.setattr(torch.version, "hip", "7.0.0")
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    monkeypatch.setattr("bitsandbytes.cextension.lib", object())
+    monkeypatch.setattr(diagnostics, "sanity_check", sanity_check)
+
+    diagnostics.main()
+
+    assert "No CUDA, ROCm, or XPU detected" in capsys.readouterr().out

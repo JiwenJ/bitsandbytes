@@ -77,7 +77,7 @@ def main():
     if cuda_specs:
         print_diagnostics(cuda_specs)
 
-    has_rocm = torch.version.hip is not None
+    has_rocm = torch.version.hip is not None and torch.cuda.is_available()
     has_cuda = not has_rocm and torch.version.cuda is not None and torch.cuda.is_available()
     has_xpu = hasattr(torch, "xpu") and torch.xpu.is_available()
 
