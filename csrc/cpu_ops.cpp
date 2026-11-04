@@ -37,6 +37,10 @@ inline unsigned char lookup_code_index(const float* codebook, float value) {
 
 } // namespace
 
+// Largest index of the [-1, 1] quantization LUT. It is even so that the center bin
+// (kLUTMaxIndex / 2) is exactly 0.0 and zeros map to the codebook's 0 entry.
+static constexpr int kLUTMaxIndex = 65534;
+
 #if defined(_M_ARM64) || defined(__aarch64__)
 #include <arm_neon.h>
 
@@ -217,13 +221,14 @@ template <typename T> static inline float neon_absmax(const T* data, long long n
 }
 
 // NEON-optimized norm_to_lut_index for 4 float values at a time
-// Maps [-1, 1] → [0, 65535]
+// Maps [-1, 1] → [0, kLUTMaxIndex]
 static inline uint16x4_t neon_norm_to_lut_index_x4(float32x4_t vals) {
     // clamp to [-1, 1]
     vals = vmaxq_f32(vals, vdupq_n_f32(-1.0f));
     vals = vminq_f32(vals, vdupq_n_f32(1.0f));
-    // (val + 1.0) * 0.5 * 65535 + 0.5
-    float32x4_t result = vmlaq_f32(vdupq_n_f32(0.5f), vaddq_f32(vals, vdupq_n_f32(1.0f)), vdupq_n_f32(0.5f * 65535.0f));
+    // (val + 1.0) * 0.5 * kLUTMaxIndex + 0.5
+    float32x4_t result =
+        vmlaq_f32(vdupq_n_f32(0.5f), vaddq_f32(vals, vdupq_n_f32(1.0f)), vdupq_n_f32(0.5f * kLUTMaxIndex));
     uint32x4_t u32 = vcvtq_u32_f32(result);
     return vmovn_u32(u32);
 }
@@ -493,7 +498,7 @@ void dequantizeBlockwise8bitCpu(
 #pragma GCC target("avx2,fma,no-avx512f")
 #endif
 
-// Precomputed direct lookup table: maps quantized uint16 index [0..65535] to codebook index.
+// Precomputed direct lookup table: maps quantized uint16 index [0..kLUTMaxIndex] to codebook index.
 // Replaces binary search per element with a single array access.
 static constexpr int kLUTSize = 65536;
 static constexpr int kLUTCacheSlots = 4;
@@ -510,7 +515,7 @@ static void build_quantize_lut(const float* codebook, unsigned char* lut) {
     int code_idx = 0;
     for (int i = 0; i < kLUTSize; ++i) {
         // Map LUT index to normalized value in [-1, 1]
-        float val = -1.0f + (2.0f * i) / (kLUTSize - 1);
+        float val = -1.0f + (2.0f * i) / kLUTMaxIndex;
         // Advance code_idx while the next midpoint is still below val
         while (code_idx < kCodebookSize - 1 && midpoints[code_idx] < val) {
             ++code_idx;
@@ -565,10 +570,10 @@ static const unsigned char* get_global_lut(const float* code) {
     return g_lut_cache.get_lut(code);
 }
 
-// Convert a normalized value in [-1, 1] to LUT index [0, 65535]
+// Convert a normalized value in [-1, 1] to LUT index [0, kLUTMaxIndex]
 static inline uint16_t norm_to_lut_index(float val) {
     val = std::clamp(val, -1.0f, 1.0f);
-    return static_cast<uint16_t>((val + 1.0f) * 0.5f * (kLUTSize - 1) + 0.5f);
+    return static_cast<uint16_t>((val + 1.0f) * 0.5f * kLUTMaxIndex + 0.5f);
 }
 
 template <typename T>
