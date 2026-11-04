@@ -590,6 +590,29 @@ def test_params4bit_quant_state_attr_access(device, quant_type, compress_statist
     assert w.bnb_quantized is True
 
 
+@pytest.mark.parametrize("quant_type", ["nf4", "fp4"])
+@pytest.mark.parametrize(
+    ("in_features", "out_features"),
+    [(128, 48), (96, 64)],
+    ids=["out_features_not_div_32", "in_features_not_div_blocksize"],
+)
+def test_linear4bit_cpu_inference_unpackable_shape(quant_type, in_features, out_features):
+    """CPU eval/no_grad inference must skip the AVX512-BF16 weight packing for shapes it does not support."""
+    layer = bnb.nn.Linear4bit(in_features, out_features, compute_dtype=torch.bfloat16, quant_type=quant_type)
+    layer = layer.to("cpu")
+    x = torch.randn(3, in_features, dtype=torch.bfloat16)
+    with torch.no_grad():
+        ref = layer(x)  # training mode never packs the weight
+
+    layer.eval()
+    layer.support_avx512bf16_for_cpu = True  # take the packing branch even without AVX512-BF16
+    with torch.no_grad():
+        out = layer(x)
+
+    assert not getattr(layer.weight.quant_state, "packing_format_for_cpu", False)
+    torch.testing.assert_close(out, ref)
+
+
 @pytest.mark.skipif(platform.system() == "Windows", reason="FSDP is not supported on Windows")
 @pytest.mark.skipif(not get_available_devices(no_cpu=True), reason="FSDP requires an accelerator device")
 def test_fsdp_state_dict_save_4bit():

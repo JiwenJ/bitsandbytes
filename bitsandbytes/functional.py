@@ -1673,6 +1673,15 @@ def int8_vectorwise_quant(A: torch.Tensor, threshold=0.0):
     return torch.ops.bitsandbytes.int8_vectorwise_quant.default(A, threshold)
 
 
+def _can_convert_weight_packed_for_cpu(quant_state: QuantState, block_n: int = 32) -> bool:
+    """
+    Whether `_convert_weight_packed_for_cpu` supports this weight: 2D [N, K] with N % block_n == 0,
+    even K, and K % blocksize == 0 so that each row is made of whole absmax blocks.
+    """
+    shape = quant_state.shape
+    return len(shape) == 2 and shape[0] % block_n == 0 and shape[1] % 2 == 0 and shape[1] % quant_state.blocksize == 0
+
+
 def _convert_weight_packed_for_cpu(qweight: torch.Tensor, quant_state: QuantState, block_n: int = 32):
     """
     qweight: (K * N / 2)  uint8

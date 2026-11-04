@@ -13,6 +13,7 @@ import torch.nn.functional as F
 import bitsandbytes as bnb
 from bitsandbytes.functional import (
     QuantState,
+    _can_convert_weight_packed_for_cpu,
     _convert_weight_packed_for_cpu,
     _convert_weight_packed_for_cpu_inverse,
     has_avx512bf16,
@@ -616,6 +617,7 @@ class Linear4bit(nn.Linear):
             and not self.training
             and x.requires_grad == False
             and not getattr(quant_state, "packing_format_for_cpu", False)
+            and _can_convert_weight_packed_for_cpu(quant_state)
         ):
             self.weight.data, quant_state = _convert_weight_packed_for_cpu(self.weight.data, quant_state)
 
