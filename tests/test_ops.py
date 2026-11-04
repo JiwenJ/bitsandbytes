@@ -472,3 +472,54 @@ class TestNonContiguousInputs:
         deq_c = torch.ops.bitsandbytes.dequantize_4bit(q_c, absmax_c, blocksize, quant_type, shape, dtype)
 
         torch.testing.assert_close(deq_nc, deq_c)
+
+
+class TestEmptyInputs:
+    """Zero-element inputs must return empty outputs instead of launching an empty CUDA grid, which exits."""
+
+    @pytest.mark.parametrize("device", get_available_devices())
+    @pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16, torch.float32], ids=id_formatter("dtype"))
+    def test_blockwise_8bit_roundtrip(self, device, dtype):
+        A = torch.empty((0, 64), dtype=dtype, device=device)
+        code = bitsandbytes.functional.create_dynamic_map().to(device)
+
+        out, absmax = torch.ops.bitsandbytes.quantize_blockwise(A, code, 256)
+        assert out.shape == A.shape
+        assert absmax.numel() == 0
+
+        deq = torch.ops.bitsandbytes.dequantize_blockwise(out, absmax, code, 256, dtype)
+        assert deq.shape == A.shape
+
+    @pytest.mark.parametrize("device", get_available_devices())
+    @pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16, torch.float32], ids=id_formatter("dtype"))
+    @pytest.mark.parametrize("quant_type", ["fp4", "nf4"])
+    def test_4bit_roundtrip(self, device, dtype, quant_type):
+        if device == "hpu" and not is_supported_on_hpu(quant_type, dtype):
+            pytest.skip("This configuration is not supported on HPU.")
+
+        A = torch.empty((0, 64), dtype=dtype, device=device)
+
+        packed, absmax = torch.ops.bitsandbytes.quantize_4bit(A, 64, quant_type, torch.uint8)
+        assert packed.numel() == 0
+        assert absmax.numel() == 0
+
+        deq = torch.ops.bitsandbytes.dequantize_4bit(packed, absmax, 64, quant_type, A.shape, dtype)
+        assert deq.shape == A.shape
+
+    @pytest.mark.parametrize("device", get_available_devices())
+    @pytest.mark.parametrize("threshold", [0.0, 6.0])
+    def test_int8_vectorwise_quant(self, device, threshold):
+        A = torch.empty((0, 64), dtype=torch.float16, device=device)
+
+        out_row, row_stats, _ = torch.ops.bitsandbytes.int8_vectorwise_quant(A, threshold)
+        assert out_row.shape == A.shape
+        assert row_stats.shape == (0,)
+
+    @pytest.mark.parametrize("device", get_available_devices())
+    def test_int8_mm_dequant(self, device):
+        A = torch.empty((0, 64), dtype=torch.int32, device=device)
+        row_stats = torch.empty(0, dtype=torch.float32, device=device)
+        col_stats = torch.randn(64, dtype=torch.float32, device=device)
+
+        out = torch.ops.bitsandbytes.int8_mm_dequant(A, row_stats, col_stats)
+        assert out.shape == A.shape

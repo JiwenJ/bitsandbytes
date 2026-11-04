@@ -741,3 +741,16 @@ def test_adagrad8bit_rejects_non_8_optim_bits():
         bnb.optim.Adagrad8bit(p, optim_bits=32)
     # default (optim_bits=8) still constructs
     bnb.optim.Adagrad8bit(p)
+
+
+@pytest.mark.parametrize("device", get_available_devices())
+@pytest.mark.parametrize("optim_bits", [32, 8], ids=id_formatter("optim_bits"))
+def test_optimizer_step_empty_param(device, optim_bits):
+    # A zero-element parameter (e.g. an empty shard) has nothing to update. The CUDA
+    # optimizer launchers used to start an empty grid, which exits the process.
+    p = torch.nn.Parameter(torch.empty(0, 8, device=device))
+    p.grad = torch.empty_like(p)
+    opt = bnb.optim.Adam([p], optim_bits=optim_bits, min_8bit_size=0)
+    opt.step()
+    assert p.shape == (0, 8)
+    assert opt.state[p]["state1"].dtype == (torch.uint8 if optim_bits == 8 else torch.float32)

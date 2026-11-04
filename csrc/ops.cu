@@ -43,6 +43,10 @@ template <typename T, int STOCHASTIC, int DATA_TYPE>
 void quantizeBlockwise(
     float* code, T* A, float* absmax, unsigned char* out, float* rand, int rand_offset, int blocksize, const int n
 ) {
+    // Launching zero blocks is an invalid configuration error, so return early on empty input.
+    if (n == 0)
+        return;
+
     int num_blocks = n / blocksize;
     num_blocks = n % blocksize == 0 ? num_blocks : num_blocks + 1;
 
@@ -84,6 +88,9 @@ template <typename T, int DATA_TYPE>
 void dequantizeBlockwise(
     float* code, unsigned char* A, float* absmax, T* out, int blocksize, const int n, bnb_stream_t stream
 ) {
+    if (n == 0)
+        return;
+
     constexpr int tile_size = (DATA_TYPE > 0) ? 1024 : 512;
 
     // Upcast to int64 to avoid overflow for large n
@@ -105,6 +112,9 @@ void optimizer32bit(
     const float beta2, const float beta3, const float alpha, const float eps, const float weight_decay, const int step,
     const float lr, const float gnorm_scale, bool skip_zeros, const int n
 ) {
+    if (n == 0)
+        return;
+
     int num_blocks = n / 4096;
     num_blocks = n % 4096 == 0 ? num_blocks : num_blocks + 1;
     switch (OPTIMIZER) {
@@ -168,6 +178,8 @@ void optimizerStatic8bitBlockwise(
     float eps, int step, float lr, float* quantiles1, float* quantiles2, float* absmax1, float* absmax2,
     float weight_decay, const float gnorm_scale, bool skip_zeros, int n
 ) {
+    if (n == 0)
+        return;
 
     int num_blocks = 0;
     switch (OPTIMIZER) {
@@ -498,6 +510,9 @@ int fill_up_to_nearest_multiple(int value, int multiple) {
 void dequant_mm_int32_fp16(
     int* A, float* rowStats, float* colStats, half* out, half* bias, int numRows, int numCols, bnb_stream_t stream
 ) {
+    if (numRows == 0 || numCols == 0)
+        return;
+
     const int threads = 512;
     const int num_per_thread = 4;
     const int num_per_block = threads * num_per_thread;
@@ -512,6 +527,9 @@ void dequant_mm_int32_fp16(
 void int8VectorQuant(
     half* __restrict__ A, int8_t* out, float* rowStats, float threshold, int rows, int cols, bnb_stream_t stream
 ) {
+    if (rows == 0)
+        return;
+
     if (threshold == 0.0) {
         kInt8VectorQuant<half, 1024, 0><<<rows, 1024, 0, stream>>>(A, out, rowStats, threshold, rows, cols);
     } else {
@@ -525,6 +543,8 @@ void gemm_4bit_inference_naive(
     int m, int n, int k, T* A, unsigned char* B, float* absmax, float* datatype, T* out, int lda, int ldb, int ldc,
     int blocksize, bnb_stream_t stream
 ) {
+    if (m == 0)
+        return;
 
     int num_blocks = (m + 3) / 4;
 #if BNB_HIP
@@ -539,6 +559,9 @@ void gemm_4bit_inference_naive(
 }
 
 template <typename T, int FUNC> void func(T* A, T* B, T value, long n) {
+    if (n == 0)
+        return;
+
     int threads = 512;
     int blocks = n / threads;
     blocks = n % threads == 0 ? blocks : blocks + 1;
