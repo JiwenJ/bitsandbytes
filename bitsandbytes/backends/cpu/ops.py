@@ -149,8 +149,10 @@ if not isinstance(lib, ErrorHandlerMockBNBNativeLibrary):
         # Note: this is not a common use case.
         avx512_fallback = _has_avx512 and blocksize >= 2048
 
-        # Odd shape is not supported by this kernel; fallback to generic implementation
-        shape_fallback = shape[-1] % 2 != 0
+        # Odd shape is not supported by this kernel; fallback to generic implementation.
+        # absmax is computed over blocks of the flattened tensor, so the kernel also
+        # needs each row to hold whole blocks.
+        shape_fallback = shape[-1] % 2 != 0 or shape[-1] % blocksize != 0
 
         if avx512_fallback or shape_fallback:
             from ..default.ops import _dequantize_4bit_compute

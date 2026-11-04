@@ -187,6 +187,24 @@ class Test4bitBlockwiseQuantOps:
 
     @pytest.mark.parametrize("device", get_available_devices())
     @pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16, torch.float32], ids=id_formatter("dtype"))
+    @pytest.mark.parametrize("quant_type", ["fp4", "nf4"])
+    @pytest.mark.parametrize("blocksize", [64, 128, 256])
+    def test_dequantize_4bit_blocks_span_rows(self, device, dtype, quant_type, blocksize):
+        """absmax covers blocks of the flattened tensor, which span rows when shape[-1] % blocksize != 0."""
+        shape = (8, blocksize + blocksize // 2)
+        A = torch.randn(shape, dtype=dtype, device=device)
+        packed, absmax = torch.ops.bitsandbytes.quantize_4bit(A, blocksize, quant_type, torch.uint8)
+
+        out = torch.ops.bitsandbytes.dequantize_4bit(packed, absmax, blocksize, quant_type, shape, dtype)
+
+        # Reference: scale each 4-bit code by the absmax of its block in the flattened tensor.
+        code = bitsandbytes.functional.get_4bit_type(quant_type, device=device)
+        idx = torch.stack([packed.flatten() >> 4, packed.flatten() & 0xF], dim=1).flatten().long()
+        expected = code[idx] * absmax.repeat_interleave(blocksize)[: prod(shape)]
+        torch.testing.assert_close(out, expected.reshape(shape).to(dtype))
+
+    @pytest.mark.parametrize("device", get_available_devices())
+    @pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16, torch.float32], ids=id_formatter("dtype"))
     @pytest.mark.parametrize("storage_dtype", [torch.uint8, torch.bfloat16], ids=id_formatter("storage_dtype"))
     @pytest.mark.parametrize("quant_type", ["fp4", "nf4"])
     @pytest.mark.parametrize("blocksize", [32, 64, 128, 256, 512])
