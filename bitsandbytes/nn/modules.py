@@ -340,10 +340,12 @@ class Params4bit(torch.nn.Parameter):
 
     def __deepcopy__(self, memo):
         new_instance = type(self).__new__(type(self))
+        memo[id(self)] = new_instance
         state = self.__getstate__()
         new_instance.__setstate__(state)
-        new_instance.quant_state = copy.deepcopy(state["quant_state"])
-        new_instance.data = copy.deepcopy(state["data"])
+        new_instance.module = copy.deepcopy(state["module"], memo)
+        new_instance.quant_state = copy.deepcopy(state["quant_state"], memo)
+        new_instance.data = copy.deepcopy(state["data"], memo)
         return new_instance
 
     def __copy__(self):

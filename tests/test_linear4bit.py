@@ -311,6 +311,31 @@ def test_deepcopy_param(device, quant_type, blocksize, compress_statistics):
 
 @pytest.mark.parametrize("device", get_available_devices())
 @pytest.mark.parametrize("quant_type", ["nf4", "fp4"])
+def test_deepcopy_linear4bit_module_reference(device, quant_type):
+    if device == "hpu" and not is_supported_on_hpu(quant_type):
+        pytest.skip("This configuration is not supported on HPU.")
+
+    linear = bnb.nn.Linear4bit(64, 32, quant_type=quant_type)
+    linear_copy = copy.deepcopy(linear)
+    assert linear_copy.weight.module is linear_copy
+
+    # quantizing the copy must not write its quant_state to the original module
+    linear_copy.to(device)
+    assert linear.quant_state is None
+    assert linear_copy.quant_state is linear_copy.weight.quant_state
+
+    quantized_copy = copy.deepcopy(linear_copy)
+    assert quantized_copy.weight.module is quantized_copy
+    assert quantized_copy.quant_state is quantized_copy.weight.quant_state
+    assert quantized_copy.quant_state is not linear_copy.quant_state
+
+    weight_copy = copy.deepcopy(linear_copy.weight)
+    assert weight_copy.module is not linear_copy
+    assert weight_copy.module.weight is weight_copy
+
+
+@pytest.mark.parametrize("device", get_available_devices())
+@pytest.mark.parametrize("quant_type", ["nf4", "fp4"])
 @pytest.mark.parametrize("blocksize", [32, 64, 128])
 @pytest.mark.parametrize("compress_statistics", TRUE_FALSE, ids=id_formatter("compress_statistics"))
 def test_params4bit_real_serialization(device, quant_type, blocksize, compress_statistics):
