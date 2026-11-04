@@ -495,7 +495,11 @@ __global__ void
         // Since blocksize will always be a power-of-2, we avoid more expensive
         // division by the blocksize and instead use a shift operation.
         // This is equivalent to (i+threadId.x*NUM_PER_TH)/blocksize.
-        local_abs_max = __ldg(&absmax[(i + threadIdx.x * NUM_PER_TH) >> (31 - __clz(blocksize))]);
+        // Threads with no valid items in a partial last tile skip the read: their
+        // block index can be past the end of absmax.
+        const int thread_offset = threadIdx.x * NUM_PER_TH;
+        if (thread_offset < valid_items_load)
+            local_abs_max = __ldg(&absmax[(i + thread_offset) >> (31 - __clz(blocksize))]);
 
         __syncthreads();
         LoadChar(loadchar).Load(&(A[i]), qvals, valid_items_load, 128);
@@ -1491,9 +1495,10 @@ __global__ void kgemm_4bit_inference_naive(
         // This is equivalent to (i+threadId.x*NUM_PER_TH)/blocksize.
         const int absidx = ((2 * offset_B) + inner_idx) >> (31 - __clz(blocksize));
 
-        local_absmax = __ldg(&(absmax[absidx]));
-
         if (row_B < M) {
+            // Spare warps of the last block (row_B >= M) skip this: absidx is past the end of absmax.
+            local_absmax = __ldg(&(absmax[absidx]));
+
             if ((inner_idx_halved + num_values_8bit) < (K / 2)) {
                 // this is the most important for performance considerations
                 reinterpret_cast<int4(&)[num_values_8bit]>(local_B_4bit)[0] =
