@@ -281,6 +281,26 @@ def test_quant_storage_shard_roundtrip(device, quant_type, quant_storage):
 
 
 @pytest.mark.parametrize("device", get_available_devices())
+@pytest.mark.parametrize("quant_storage", [torch.float16, torch.bfloat16, torch.float32], ids=describe_dtype)
+def test_linear4bit_to_dtype_keeps_quantized_weight(device, quant_storage):
+    """Casting a quantized Linear4bit must not convert the packed data stored as a float dtype."""
+    if device == "hpu" and not is_supported_on_hpu("nf4", torch.float32, quant_storage):
+        pytest.skip("This configuration is not supported on HPU.")
+
+    layer = bnb.nn.Linear4bit(64, 64, bias=False, quant_type="nf4", quant_storage=quant_storage).to(device)
+    x = torch.randn(4, 64, device=device)
+    ref = layer(x)
+    packed = layer.weight.data.clone()
+
+    for dtype in [torch.float16, torch.bfloat16, torch.float32]:
+        layer.to(dtype)
+
+        assert layer.weight.dtype == quant_storage
+        assert torch.equal(layer.weight.data.view(torch.uint8), packed.view(torch.uint8))
+        torch.testing.assert_close(layer(x), ref)
+
+
+@pytest.mark.parametrize("device", get_available_devices())
 @pytest.mark.parametrize("quant_type", ["nf4", "fp4"])
 @pytest.mark.parametrize("blocksize", [32, 64, 128])
 @pytest.mark.parametrize("compress_statistics", TRUE_FALSE, ids=id_formatter("compress_statistics"))

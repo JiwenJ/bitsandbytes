@@ -430,6 +430,11 @@ class Params4bit(torch.nn.Parameter):
             if self.quant_state is not None:
                 self.quant_state.to(device)
 
+            if self.bnb_quantized:
+                # The packed 4-bit data is stored as quant_storage; casting it to another dtype would
+                # convert the packed bytes numerically and corrupt the weight, so only move the device.
+                dtype = None
+
             new_param = Params4bit(
                 super().to(device=device, dtype=dtype, non_blocking=non_blocking),
                 requires_grad=self.requires_grad,
