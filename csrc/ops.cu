@@ -501,7 +501,7 @@ void dequant_mm_int32_fp16(
     const int threads = 512;
     const int num_per_thread = 4;
     const int num_per_block = threads * num_per_thread;
-    const int n = numRows * numCols;
+    const int64_t n = (int64_t)numRows * numCols;
     const int num_blocks = (n + num_per_block - 1) / num_per_block;
 
     kdequant_mm_int32_fp16<num_per_thread, threads>

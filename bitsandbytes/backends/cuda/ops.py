@@ -69,6 +69,12 @@ _setup_ctypes(
 _get_raw_stream = torch._C._cuda_getCurrentRawStream
 
 
+def _check_int32_numel(numel: int) -> None:
+    # The quantization and optimizer kernels take the element count as a 32-bit int, which ctypes truncates silently.
+    if numel >= 2**31:
+        raise ValueError(f"Number of elements must be less than 2**31, got {numel}")
+
+
 @functools.cache
 def _gpu_dispatch_props(device_index):
     props = torch.cuda.get_device_properties(device_index)
@@ -306,6 +312,7 @@ def _(A: torch.Tensor, code: torch.Tensor, blocksize: int) -> tuple[torch.Tensor
         raise ValueError(f"invalid blocksize {blocksize}")
 
     n = A.numel()
+    _check_int32_numel(n)
     blocks = -(n // -blocksize)
     absmax = torch.empty((blocks,), device=A.device, dtype=torch.float32)
     out = torch.empty_like(A, dtype=torch.uint8)
@@ -358,6 +365,7 @@ def _(
 def _dequantize_blockwise_impl(
     A: torch.Tensor, absmax: torch.Tensor, code: torch.Tensor, blocksize: int, dtype: torch.dtype, out: torch.Tensor
 ) -> None:
+    _check_int32_numel(A.numel())
     A = A.contiguous()
 
     if dtype == torch.float32:
@@ -387,6 +395,7 @@ def _(
 ) -> tuple[torch.Tensor, torch.Tensor]:
     A = A.contiguous()
     n = A.numel()
+    _check_int32_numel(n)
     blocks = -(n // -blocksize)
     absmax = torch.empty((blocks,), device=A.device, dtype=torch.float32)
     out = torch.empty(((n + 1) // (quant_storage.itemsize * 2), 1), device=A.device, dtype=quant_storage)
@@ -459,6 +468,7 @@ def _dequantize_4bit_impl(
     dtype: torch.dtype,
     out: torch.Tensor,
 ) -> None:
+    _check_int32_numel(out.numel())
     A = A.contiguous()
 
     if dtype == torch.bfloat16:
@@ -1091,6 +1101,7 @@ def _optimizer_update_32bit_impl(
         raise ValueError(
             f"Gradient+optimizer bit data type combination not supported: grad {g.dtype}, optimizer {state1.dtype}",
         )
+    _check_int32_numel(g.numel())
 
     with _cuda_device_of(g):
         optim_func(
@@ -1183,6 +1194,7 @@ def _optimizer_update_8bit_blockwise_impl(
         raise ValueError(
             f"Unsupported gradient dtype: {g.dtype}. Supported dtypes: torch.float32, torch.float16, torch.bfloat16"
         )
+    _check_int32_numel(g.numel())
 
     with _cuda_device_of(g):
         optimizer_fn(

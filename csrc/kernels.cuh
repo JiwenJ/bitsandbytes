@@ -68,7 +68,7 @@ __global__ void kOptimizerStatic8bit1StateBlockwise(
 template <int ITEMS_PER_THREAD, int THREADS>
 __global__ void kdequant_mm_int32_fp16(
     int* __restrict__ const A, float* __restrict__ const rowStats, float* __restrict__ const colStats, half* out,
-    half* __restrict__ const bias, const int numRows, const int numCols, const int n
+    half* __restrict__ const bias, const int numRows, const int numCols, const int64_t n
 );
 
 template <typename T, int THREADS, int SPARSE_DECOMP>

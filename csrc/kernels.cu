@@ -1344,7 +1344,8 @@ __launch_bounds__(1024, BNB_MAX_THREADS_PER_SM / 1024) __global__
     __shared__ typename BlockReduceT::TempStorage temp_storage;
     __shared__ T smem_row_absmax;
 
-    const int row_id = blockIdx.x;
+    // 64-bit so that row_id * cols cannot overflow for inputs with more than INT_MAX elements.
+    const int64_t row_id = blockIdx.x;
     const T* row_data = A + (row_id * cols);
 
     // Threads will read the row values in a striped access pattern and find a local absmax.
@@ -1396,11 +1397,11 @@ template __global__ void kInt8VectorQuant<half, 1024, 1>(
 template <int ITEMS_PER_THREAD, int THREADS>
 __global__ void kdequant_mm_int32_fp16(
     int* __restrict__ const A, float* __restrict__ const rowStats, float* __restrict__ const colStats, half* out,
-    half* __restrict__ const bias, const int numRows, const int numCols, const int n
+    half* __restrict__ const bias, const int numRows, const int numCols, const int64_t n
 ) {
-    const int n_out = numRows * numCols;
+    const int64_t n_out = (int64_t)numRows * numCols;
 
-    int block_offset = blockIdx.x * THREADS * ITEMS_PER_THREAD;
+    int64_t block_offset = (int64_t)blockIdx.x * THREADS * ITEMS_PER_THREAD;
     int thread_offset = threadIdx.x * ITEMS_PER_THREAD;
 
     int local_values[ITEMS_PER_THREAD];
@@ -1440,7 +1441,7 @@ __global__ void kdequant_mm_int32_fp16(
 
 #pragma unroll ITEMS_PER_THREAD
     for (int j = 0; j < ITEMS_PER_THREAD; j++) {
-        int outIdx = block_offset + thread_offset + j;
+        int64_t outIdx = block_offset + thread_offset + j;
         if (outIdx < n_out) {
             out[outIdx] = local_output[j];
         }
@@ -1606,7 +1607,7 @@ template __global__ void kgemm_4bit_inference_naive<float, 128, 32>(
 
 template __global__ void kdequant_mm_int32_fp16<4, 512>(
     int* __restrict__ const A, float* __restrict__ const rowStats, float* __restrict__ const colStats, half* out,
-    half* __restrict__ const bias, const int numRows, const int numCols, const int n
+    half* __restrict__ const bias, const int numRows, const int numCols, const int64_t n
 );
 
 template __device__ unsigned char dQuantize<0>(float* smem_code, const float rand, float x);
