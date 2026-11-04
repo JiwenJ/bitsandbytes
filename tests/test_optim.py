@@ -741,3 +741,21 @@ def test_adagrad8bit_rejects_non_8_optim_bits():
         bnb.optim.Adagrad8bit(p, optim_bits=32)
     # default (optim_bits=8) still constructs
     bnb.optim.Adagrad8bit(p)
+
+
+def test_lamb32bit_trust_ratio_uses_bias_corrected_update():
+    """LAMB's trust ratio is computed on m_hat / (sqrt(v_hat) + eps), as in the CUDA and default backends."""
+    torch.manual_seed(0)
+    lr, eps = 1e-2, 1e-8
+    p = torch.nn.Parameter(torch.randn(64, 64) * 0.01)
+    g = torch.randn(64, 64)
+    p0 = p.detach().clone()
+
+    opt = bnb.optim.LAMB32bit([p], lr=lr, eps=eps, weight_decay=0.0)
+    p.grad = g.clone()
+    opt.step()
+
+    # After one step, m_hat = g and v_hat = g * g.
+    update = g / (g.abs() + eps)
+    scale = min(1.0, (opt.args.max_unorm * p0.norm() / update.norm()).item())
+    torch.testing.assert_close(p.detach(), p0 - lr * scale * update, rtol=1e-4, atol=1e-6)

@@ -329,11 +329,15 @@ def _compute_update_norm_and_scale(
     unorm_vec: Optional[torch.Tensor],
     max_unorm: float,
     param_norm: float,
+    norm_scale: float = 1.0,
 ) -> float:
-    """Compute trust-ratio scaling factor for LAMB/LARS and store update norm."""
+    """Compute trust-ratio scaling factor for LAMB/LARS and store update norm.
+
+    The norm is taken of ``norm_scale * update``.
+    """
     if max_unorm <= 0.0:
         return 1.0
-    unorm = torch.norm(update).item()
+    unorm = torch.norm(update).item() * norm_scale
     if unorm_vec is not None:
         unorm_vec.fill_(unorm)
     if unorm > max_unorm * param_norm:
@@ -379,7 +383,11 @@ def _optimizer_update_32bit_cpu(
 
         update = state1 / (state2.sqrt() + eps * correction2)
 
-        update_scale = _compute_update_norm_and_scale(update, unorm_vec, max_unorm, param_norm)
+        # Trust ratio on the bias-corrected update m_hat / (sqrt(v_hat) + eps), which equals
+        # update * correction2 / correction1, as in the CUDA and default backends.
+        update_scale = _compute_update_norm_and_scale(
+            update, unorm_vec, max_unorm, param_norm, norm_scale=correction2 / correction1
+        )
         p_float.add_(update, alpha=step_size * update_scale)
 
     elif optimizer_name == "ademamix":
