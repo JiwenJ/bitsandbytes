@@ -100,6 +100,29 @@ template <typename T, int MT, int NT, int K_CHUNK = 64> static constexpr int sme
     return 2 * (MT + NT) * STRIDE * static_cast<int>(sizeof(T));
 }
 
+/// @brief Whether the kernel body for an MT x NT x K_CHUNK tile is compiled out (replaced by __trap())
+///        for `arch`, the __CUDA_ARCH__ the kernel is compiled for. Pruned tiles are ones the dispatcher
+///        never selects on a device of that arch. The device can run code compiled for an older arch
+///        (see loaded_arch()), so the dispatcher checks its choice against this as well.
+__host__ __device__ constexpr bool tile_pruned_for_arch(int arch, int mt, int nt, int kc) {
+    // HBM (sm90/sm100/sm103): MT=32 always returns K_CHUNK=128 with NT=64 or NT=256;
+    // MT=64 never uses NT=32 (GDDR-only fallback).
+    // sm80 is intentionally excluded: these four GDDR tiles are unused on sm80 itself
+    // but stay in the sm80 cubin so sm86/sm89 running it keep their tuned tiles.
+    if ((arch == 900 || arch == 1000 || arch == 1030) &&
+        ((mt == 32 && nt == 64 && kc == 64) || (mt == 32 && nt == 128 && kc == 64) ||
+         (mt == 32 && nt == 128 && kc == 128) || (mt == 64 && nt == 32 && kc == 128)))
+        return true;
+    // sm90: only 64x64-64 is dispatched at MT=64 (NT forced to 64, K_CHUNK=128 never selected).
+    if (arch == 900 && mt == 64 && !(nt == 64 && kc == 64))
+        return true;
+    // sm100/sm103 (B200/B300): only 64x64-128 is dispatched at MT=64.
+    if ((arch == 1000 || arch == 1030) && mt == 64 && !(nt == 64 && kc == 128))
+        return true;
+    // GDDR (sm86/sm89/sm120/sm121): NT=256 only exists in the HBM MT=32 path.
+    return (arch == 860 || arch == 890 || arch == 1200 || arch == 1210) && mt == 32 && nt == 256 && kc == 128;
+}
+
 /// @brief Fused 4-bit dequantize + MMA GEMM for sm80+ (bf16 and fp16).
 ///        Computes C[M,N] = A[M,K] @ B[N,K]^T + bias.
 ///
@@ -147,33 +170,13 @@ __global__ void __launch_bounds__(CTA_SIZE) gemm_4bit_sm80_m16n8k16(
     static_assert(NT == 32 || NT == 64 || NT == 128 || NT == 256, "NT must be 32, 64, 128, or 256");
     static_assert(K_CHUNK == 64 || K_CHUNK == 128, "K_CHUNK must be 64 or 128");
 
-    // Trap on tile+arch combinations that the dispatcher can never reach.
+    // Trap on tile+arch combinations that the dispatcher never launches (see tile_pruned_for_arch).
     // if constexpr prunes the kernel body entirely at compile time; __trap()
     // provides a visible error if this assumption is ever violated at runtime.
-    // clang-format off
-#if __CUDA_ARCH__ == 900 || __CUDA_ARCH__ == 1000 || __CUDA_ARCH__ == 1030
-    // HBM (sm90/sm100/sm103): MT=32 always returns K_CHUNK=128 with NT=64 or NT=256;
-    // MT=64 never uses NT=32 (GDDR-only fallback).
-    // sm80 is intentionally excluded: these four GDDR tiles are unused on sm80 itself
-    // but must remain in the sm80 cubin so it can run correctly on sm86/sm89.
-    if constexpr ((MT==32 && NT== 64 && K_CHUNK== 64) ||
-                  (MT==32 && NT==128 && K_CHUNK== 64) ||
-                  (MT==32 && NT==128 && K_CHUNK==128) ||
-                  (MT==64 && NT== 32 && K_CHUNK==128)) { __trap(); return; }
-#endif
-#if __CUDA_ARCH__ == 900
-    // sm90: only 64x64-64 is dispatched at MT=64 (NT forced to 64, K_CHUNK=128 never selected).
-    if constexpr (MT==64 && !(NT==64 && K_CHUNK==64)) { __trap(); return; }
-#endif
-#if __CUDA_ARCH__ == 1000 || __CUDA_ARCH__ == 1030
-    // sm100/sm103 (B200/B300): only 64x64-128 is dispatched at MT=64.
-    if constexpr (MT==64 && !(NT==64 && K_CHUNK==128)) { __trap(); return; }
-#endif
-#if __CUDA_ARCH__ == 860 || __CUDA_ARCH__ == 890 || __CUDA_ARCH__ == 1200 || __CUDA_ARCH__ == 1210
-    // GDDR (sm86/sm89/sm120/sm121): NT=256 only exists in the HBM MT=32 path.
-    if constexpr (MT==32 && NT==256 && K_CHUNK==128) { __trap(); return; }
-#endif
-    // clang-format on
+    if constexpr (tile_pruned_for_arch(__CUDA_ARCH__, MT, NT, K_CHUNK)) {
+        __trap();
+        return;
+    }
 
     const float absmax_offset_f = absmax_8bit ? __ldg(absmax_offset) : 0.0f;
 
@@ -487,6 +490,22 @@ static void launch_tile(
     );
 }
 
+/// @brief __CUDA_ARCH__ of the kernel code loaded on the current device, cached per device. It is
+///        older than the device's own arch when the device runs a cubin built for an older minor
+///        version (sm80 cubin on sm86) or JIT-compiles PTX built for an older arch (e.g. compute_90
+///        PTX on sm100/sm120). Same approach as CUB's PtxVersion(); 0 if the query fails.
+template <typename T> static int loaded_arch(GpuProps gpu) {
+    static int cache[16] = {};
+    if (gpu.device_index < 16 && cache[gpu.device_index] != 0)
+        return cache[gpu.device_index];
+    cudaFuncAttributes attr = {};
+    const int arch =
+        cudaFuncGetAttributes(&attr, gemm_4bit_sm80_m16n8k16<T, 128, 64, 64>) == cudaSuccess ? attr.ptxVersion * 10 : 0;
+    if (gpu.device_index < 16)
+        cache[gpu.device_index] = arch;
+    return arch;
+}
+
 /// @brief Auto-dispatch launcher for the sm80+ MMA kernel. Selects MT/NT/KC tile
 ///        based on GPU arch, SM count, and shape.
 /// @tparam T Input/output dtype (`__nv_bfloat16` or `half`)
@@ -661,6 +680,14 @@ void launch_gemm_4bit_sm80_m16n8k16(
         } else if (nt == 32) {
             nt = 64; // no 64x32-64 tile
         }
+    }
+
+    // The tiles above are chosen by the device's arch, but tiles are pruned by the arch of the
+    // loaded code, which can be older (see loaded_arch()). 128x64-64 is never pruned.
+    if (tile_pruned_for_arch(loaded_arch<T>(gpu), mt, nt, kc)) {
+        mt = 128;
+        nt = 64;
+        kc = 64;
     }
 
     // clang-format off
