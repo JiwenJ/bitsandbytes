@@ -320,6 +320,50 @@ def _(
     )
 
 
+def _copy_into_out(result: torch.Tensor, out: torch.Tensor) -> None:
+    torch._check(
+        out.shape == result.shape, lambda: f"Expected out.shape == {tuple(result.shape)}, got {tuple(out.shape)}"
+    )
+    torch._check(out.dtype == result.dtype, lambda: f"Expected out.dtype == {result.dtype}, got {out.dtype}")
+    torch._check(out.device == result.device, lambda: f"Expected out.device == {result.device}, got {out.device}")
+    out.copy_(result)
+
+
+# Fallbacks for the .out overloads on devices that only implement the functional versions (e.g. CPU, HPU).
+# They dispatch to the device's functional kernel, so a device-specific implementation is still used.
+@register_kernel("bitsandbytes::dequantize_blockwise.out", "default")
+def _(
+    A: torch.Tensor, absmax: torch.Tensor, code: torch.Tensor, blocksize: int, dtype: torch.dtype, out: torch.Tensor
+) -> None:
+    _copy_into_out(torch.ops.bitsandbytes.dequantize_blockwise.default(A, absmax, code, blocksize, dtype), out)
+
+
+@register_kernel("bitsandbytes::dequantize_4bit.out", "default")
+def _(
+    A: torch.Tensor,
+    absmax: torch.Tensor,
+    blocksize: int,
+    quant_type: str,
+    shape: Sequence[int],
+    dtype: torch.dtype,
+    out: torch.Tensor,
+) -> None:
+    _copy_into_out(torch.ops.bitsandbytes.dequantize_4bit.default(A, absmax, blocksize, quant_type, shape, dtype), out)
+
+
+@register_kernel("bitsandbytes::gemv_4bit.out", "default")
+def _(
+    A: torch.Tensor,
+    B: torch.Tensor,
+    shapeB: Sequence[int],
+    absmax: torch.Tensor,
+    code: torch.Tensor,
+    blocksize: int,
+    out: torch.Tensor,
+) -> None:
+    _copy_into_out(torch.ops.bitsandbytes.gemv_4bit.default(A, B, shapeB, absmax, code, blocksize), out)
+
+
 def _gemm_4bit_default_impl(
     A: torch.Tensor,
     B: torch.Tensor,

@@ -260,6 +260,33 @@ class Test4bitBlockwiseQuantOps:
         opcheck(torch.ops.bitsandbytes.gemv_4bit.default, (A, B_q, B.shape, absmax, code, blocksize))
 
     @pytest.mark.parametrize("device", get_available_devices())
+    def test_out_overloads_match_functional(self, device):
+        # functional.py calls the .out overloads when out= is given, so every device must support them.
+        A = torch.randn(64, 128, dtype=torch.float32, device=device)
+
+        q4, absmax4 = torch.ops.bitsandbytes.quantize_4bit.default(A, 64, "nf4", torch.uint8)
+        ref = torch.ops.bitsandbytes.dequantize_4bit.default(q4, absmax4, 64, "nf4", A.shape, A.dtype)
+        out = torch.empty_like(ref)
+        torch.ops.bitsandbytes.dequantize_4bit.out(q4, absmax4, 64, "nf4", A.shape, A.dtype, out)
+        torch.testing.assert_close(out, ref)
+
+        code8 = bitsandbytes.functional.create_dynamic_map().to(device)
+        q8, absmax8 = torch.ops.bitsandbytes.quantize_blockwise.default(A, code8, 256)
+        ref = torch.ops.bitsandbytes.dequantize_blockwise.default(q8, absmax8, code8, 256, A.dtype)
+        out = torch.empty_like(ref)
+        torch.ops.bitsandbytes.dequantize_blockwise.out(q8, absmax8, code8, 256, A.dtype, out)
+        torch.testing.assert_close(out, ref)
+
+        if device == "cpu" and bitsandbytes.functional.has_avx512bf16():
+            return  # The AVX512-BF16 CPU gemv kernel expects pre-packed weights.
+        x = torch.randn(1, 1, 128, dtype=torch.float32, device=device)
+        code4 = bitsandbytes.functional.get_4bit_type("nf4", device=device, blocksize=64)
+        ref = torch.ops.bitsandbytes.gemv_4bit.default(x, q4, A.shape, absmax4, code4, 64)
+        out = torch.empty_like(ref)
+        torch.ops.bitsandbytes.gemv_4bit.out(x, q4, A.shape, absmax4, code4, 64, out)
+        torch.testing.assert_close(out, ref)
+
+    @pytest.mark.parametrize("device", get_available_devices())
     @pytest.mark.parametrize("requires_grad", TRUE_FALSE, ids=id_formatter("requires_grad"))
     @pytest.mark.parametrize("storage_dtype", [torch.uint8, torch.bfloat16], ids=id_formatter("storage_dtype"))
     @pytest.mark.parametrize("has_bias", TRUE_FALSE, ids=id_formatter("has_bias"))
