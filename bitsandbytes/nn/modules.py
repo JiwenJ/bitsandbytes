@@ -918,6 +918,8 @@ class Embedding4bit(nn.Embedding):
             quant_storage=quant_storage,
             module=self,
         )
+        self.quant_state = None
+        self.quant_storage = quant_storage
 
         blocksize = self.weight.blocksize
 

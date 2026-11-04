@@ -466,6 +466,31 @@ def test_4bit_embedding_weight_fsdp_fix(device):
     assert module.weight.quant_state is not None
 
 
+@pytest.mark.parametrize("device", get_available_devices())
+@pytest.mark.parametrize("quant_storage", [torch.uint8, torch.float32], ids=id_formatter("quant_storage"))
+def test_4bit_embedding_plain_weight_fsdp_fix(device, quant_storage):
+    if device == "hpu" and not is_supported_on_hpu("nf4", torch.float32, quant_storage):
+        pytest.skip("This configuration is not supported on HPU")
+
+    num_embeddings = 64
+    embedding_dim = 32
+
+    module = bnb.nn.Embedding4bit(
+        num_embeddings=num_embeddings, embedding_dim=embedding_dim, quant_type="nf4", quant_storage=quant_storage
+    )
+    module.to(device)
+
+    input_tokens = torch.randint(low=0, high=num_embeddings, size=(4,), device=device)
+    expected = module(input_tokens)
+
+    # FSDP can replace the Params4bit weight with a plain tensor; forward must restore it from the module.
+    module.weight = nn.Parameter(module.weight.data, requires_grad=False)
+
+    torch.testing.assert_close(module(input_tokens), expected)
+    assert isinstance(module.weight, bnb.nn.Params4bit)
+    assert module.weight.quant_storage == quant_storage
+
+
 @pytest.mark.parametrize("device", get_available_devices(no_cpu=True))
 def test_4bit_linear_weight_fsdp_fix(device):
     inp_size = 64
