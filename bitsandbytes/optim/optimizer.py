@@ -262,6 +262,21 @@ class Optimizer8bit(torch.optim.Optimizer):
             else:
                 state[k] = v
 
+        # Loading moved the state to regular device memory. Put the large state buffers of paged
+        # optimizers back into paged memory (same rule as get_state_buffer), otherwise paging
+        # stops working after a restore and the full state stays resident on the GPU.
+        if self.is_paged:
+            for param, param_state in state.items():
+                if not isinstance(param, torch.Tensor) or param.device.type == "cpu" or param.numel() < 1e5:
+                    continue
+                for key in ("state1", "state2"):
+                    value = param_state.get(key)
+                    if isinstance(value, torch.Tensor) and not getattr(value, "is_paged", False):
+                        buff = F.get_paged(*value.shape, dtype=value.dtype, device=param.device)
+                        buff.copy_(value)
+                        self.page_mng.paged_tensors.append(buff)
+                        param_state[key] = buff
+
         # Update parameter groups, setting their 'params' value
         def update_group(group, new_group):
             new_group["params"] = group["params"]
