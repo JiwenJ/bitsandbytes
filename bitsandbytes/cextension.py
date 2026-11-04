@@ -393,7 +393,15 @@ try:
     lib = get_native_library()
 except Exception as e:
     if BNB_BACKEND in ("CPU", "XPU"):
-        lib = ErrorHandlerMockBNBNativeLibrary("XPU/CPU can run without native library.")
+        # CPU/XPU fall back to PyTorch implementations without the native library. A source checkout
+        # without a compiled library is expected, but a packaged library that fails to load (e.g. a
+        # missing OpenMP runtime) silently disables the native kernels, so report why.
+        packaged = any(PACKAGE_DIR.glob(f"libbitsandbytes_*{DYNAMIC_LIBRARY_SUFFIX}"))
+        logger.log(
+            logging.WARNING if packaged else logging.DEBUG,
+            f"bitsandbytes native library could not be loaded, using PyTorch fallbacks: {e}",
+        )
+        lib = ErrorHandlerMockBNBNativeLibrary(f"XPU/CPU can run without native library. Load error: {e}")
     else:
         error_msg = str(e)
         logger.error(
