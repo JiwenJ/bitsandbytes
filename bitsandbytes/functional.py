@@ -7,6 +7,7 @@ import ctypes as ct
 import itertools
 from math import prod
 from typing import Any, Optional
+import weakref
 
 import numpy as np
 import torch
@@ -29,6 +30,8 @@ class GlobalPageManager:
         raise RuntimeError("Call get_instance() instead")
 
     def initialize(self):
+        # weak references in the order the tensors were added, so that
+        # the memory of deleted paged tensors can be freed (see get_paged)
         self.paged_tensors = []
 
     @classmethod
@@ -38,12 +41,18 @@ class GlobalPageManager:
             cls._instance.initialize()
         return cls._instance
 
+    def add_paged_tensor(self, t: torch.Tensor):
+        # the reference removes itself from the list once t is freed
+        self.paged_tensors.append(weakref.ref(t, self.paged_tensors.remove))
+
     def prefetch_all(self, to_cpu=False):
         # assume the first added, will be the
         # ones that are used first, so swap them in last
         # in the case they are evicted again
-        for t in self.paged_tensors[::-1]:
-            prefetch_tensor(t, to_cpu)
+        for ref in self.paged_tensors[::-1]:
+            t = ref()
+            if t is not None:
+                prefetch_tensor(t, to_cpu)
 
 
 class CUBLAS_Context:
@@ -93,6 +102,11 @@ def get_paged(*shape, dtype=torch.float32, device=FIRST_CUDA_DEVICE):
     managed_ptr = lib.cget_managed_ptr(ct.c_size_t(num_bytes))
     c_ptr = ct.cast(managed_ptr, ct.POINTER(ct.c_int))
     new_array = np.ctypeslib.as_array(c_ptr, shape=shape)
+    # The tensor storage keeps new_array alive, so free the managed memory once new_array is collected.
+    # Skipped at interpreter exit, and for native libraries built without cfree_managed_ptr.
+    free_managed_ptr = getattr(lib._lib, "cfree_managed_ptr", None)
+    if free_managed_ptr is not None:
+        weakref.finalize(new_array, free_managed_ptr, ct.c_void_p(managed_ptr)).atexit = False
     out = torch.frombuffer(new_array, dtype=dtype, count=prod(shape)).view(shape)
     out.is_paged = True
     out.page_deviceid = device.index

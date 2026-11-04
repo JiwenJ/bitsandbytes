@@ -1,6 +1,9 @@
+import ctypes
+import gc
 import math
 import platform
 import time
+from types import SimpleNamespace
 
 from packaging import version
 import pytest
@@ -1047,3 +1050,32 @@ def test_normal_map_tree():
         for i in idx:
             pivots.append((values[i - 1] + values[i]) / 2)
         # print(pivots)
+
+
+def test_get_paged_frees_managed_memory(monkeypatch):
+    # Host memory stands in for managed memory, so this runs without a GPU.
+    buf = ctypes.create_string_buffer(64)
+    freed, prefetched = [], []
+    fake_lib = SimpleNamespace(
+        cget_managed_ptr=lambda num_bytes: ctypes.addressof(buf),
+        cprefetch=lambda ptr, num_bytes, device: prefetched.append(ptr.value),
+        _lib=SimpleNamespace(cfree_managed_ptr=lambda ptr: freed.append(ptr.value)),
+    )
+    monkeypatch.setattr(F, "lib", fake_lib)
+    page_mng = F.GlobalPageManager.__new__(F.GlobalPageManager)
+    page_mng.initialize()
+
+    A = F.get_paged(4, 4)
+    page_mng.add_paged_tensor(A)
+    page_mng.prefetch_all()
+    assert prefetched == [ctypes.addressof(buf)]
+
+    row = A[1]
+    del A
+    gc.collect()
+    assert freed == []  # the view still uses the memory
+
+    del row
+    gc.collect()
+    assert freed == [ctypes.addressof(buf)]
+    assert page_mng.paged_tensors == []

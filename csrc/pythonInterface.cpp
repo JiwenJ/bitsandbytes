@@ -562,6 +562,13 @@ void* cget_managed_ptr(size_t bytes) {
     return ptr;
 }
 
+void cfree_managed_ptr(void* ptr) {
+    // Runs from a Python finalizer (see get_paged), so report errors instead of exiting.
+    bnb_error_t status = BNB_DEVICE_FREE(ptr);
+    if (status != BNB_SUCCESS)
+        fprintf(stderr, "Error %s in cfree_managed_ptr\n", BNB_GET_ERROR_STRING(status));
+}
+
 void cprefetch(void* ptr, size_t bytes, int device) {
 
     int hasPrefetch = 0;
@@ -697,6 +704,7 @@ void cgemv_4bit_inference_fp32(
 // XPU Paged Memory Support using SYCL USM (Unified Shared Memory)
 // Equivalent CUDA APIs -> SYCL/Level Zero APIs:
 //   cudaMallocManaged     -> sycl::malloc_shared / zeMemAllocShared
+//   cudaFree              -> sycl::free / zeMemFree
 //   cudaMemPrefetchAsync  -> sycl::queue::prefetch / zeCommandListAppendMemoryPrefetch
 //   cudaPeekAtLastError   -> N/A (SYCL uses exceptions; L0 returns ze_result_t per call)
 
@@ -711,6 +719,17 @@ void* cget_managed_ptr(size_t bytes) {
     } catch (const sycl::exception& e) {
         fprintf(stderr, "XPU SYCL Error in cget_managed_ptr: %s\n", e.what());
         return nullptr;
+    }
+}
+
+void cfree_managed_ptr(void* ptr) {
+    try {
+        auto& q = xpu_default_queue();
+        // sycl::free requires that no enqueued command (e.g. a prefetch) still uses the memory.
+        q.wait();
+        sycl::free(ptr, q);
+    } catch (const sycl::exception& e) {
+        fprintf(stderr, "XPU SYCL Error in cfree_managed_ptr: %s\n", e.what());
     }
 }
 

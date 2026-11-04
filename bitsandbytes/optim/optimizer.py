@@ -386,7 +386,7 @@ class Optimizer8bit(torch.optim.Optimizer):
             # > 1 MB
             buff = F.get_paged(*p.shape, dtype=dtype, device=p.device)
             F.fill(buff, 0)
-            self.page_mng.paged_tensors.append(buff)
+            self.page_mng.add_paged_tensor(buff)
             return buff
 
     def prefetch_state(self, p):

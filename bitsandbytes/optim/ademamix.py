@@ -263,7 +263,7 @@ class AdEMAMix(Optimizer2State):
         else:
             buff = F.get_paged(*(2, *p.size()), dtype=dtype, device=p.device)
             F.fill(buff, 0)
-            self.page_mng.paged_tensors.append(buff)
+            self.page_mng.add_paged_tensor(buff)
             return buff
 
 
