@@ -39,7 +39,7 @@ def get_cuda_bnb_library_path(cuda_specs: CUDASpecs) -> Path:
 
     override_value = os.environ.get(override_var)
 
-    if override_value is not None:
+    if override_value:
         if not override_value.isdigit():
             raise RuntimeError(f"{override_var}={override_value!r}: value must be digits only (e.g. '124' for 12.4).")
         library_name = f"libbitsandbytes_{prefix}{override_value}{DYNAMIC_LIBRARY_SUFFIX}"

@@ -128,6 +128,16 @@ def test_rocm_override(monkeypatch, rocm70_spec, caplog):
     assert "BNB_ROCM_VERSION" in caplog.text
 
 
+def test_override_empty_is_ignored(monkeypatch, cuda120_spec, caplog):
+    """An empty BNB_CUDA_VERSION is treated as unset, as in the rest of the setup code."""
+    monkeypatch.setenv("BNB_CUDA_VERSION", "")
+    with patch("bitsandbytes.cextension._find_cuda_libs", return_value={}):
+        with caplog.at_level("WARNING"):
+            result = get_cuda_bnb_library_path(cuda120_spec)
+    assert result.stem == "libbitsandbytes_cuda120"
+    assert "BNB_CUDA_VERSION" not in caplog.text
+
+
 def test_override_invalid_format(monkeypatch, cuda120_spec):
     """Override value must be digits only (e.g. '124'), not dotted or alphanumeric."""
     monkeypatch.setenv("BNB_CUDA_VERSION", "12.4")
