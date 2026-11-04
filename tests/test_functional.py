@@ -347,6 +347,23 @@ def test_stable_embedding():
     layer.reset_parameters()
 
 
+@pytest.mark.parametrize("device", get_available_devices())
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16], ids=describe_dtype)
+def test_stable_embedding_half_precision(device, dtype):
+    layer = bnb.nn.StableEmbedding(32, 64, device=device).to(dtype)
+    x = torch.randint(0, 32, (4, 8), device=device)
+
+    out = layer(x)
+    out.float().sum().backward()
+
+    # The layer norm still runs in full precision on the cast weights.
+    ref_layer = bnb.nn.StableEmbedding(32, 64, device=device)
+    ref_layer.load_state_dict(layer.state_dict())
+    assert out.dtype == dtype
+    torch.testing.assert_close(out, ref_layer(x).to(dtype))
+    assert layer.norm.weight.grad.dtype == dtype
+
+
 class TestLLMInt8Functional:
     @staticmethod
     def vectorwise_mm_dequant(xq, S1, S2, dtype=torch.half):

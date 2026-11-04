@@ -128,6 +128,14 @@ class StableEmbedding(torch.nn.Embedding):
         # always apply layer norm in full precision
         emb = emb.to(torch.get_default_dtype())
 
+        if self.norm.weight.dtype != emb.dtype:
+            # The norm parameters were cast together with the module (e.g. by .half()), so cast them back for
+            # the computation. Otherwise keep calling self.norm so that hooks registered on it still run.
+            norm = self.norm
+            return F.layer_norm(
+                emb, norm.normalized_shape, norm.weight.to(emb.dtype), norm.bias.to(emb.dtype), norm.eps
+            ).to(self.weight.dtype)
+
         return self.norm(emb).to(self.weight.dtype)
 
 
