@@ -371,6 +371,37 @@ def test_linear4bit_state_dict_after_cpu_inference(compress_statistics):
     torch.testing.assert_close(out, ref, rtol=0.03, atol=0)
 
 
+@pytest.mark.parametrize("training", TRUE_FALSE, ids=id_formatter("training"))
+@pytest.mark.parametrize("bias", TRUE_FALSE, ids=id_formatter("bias"))
+@pytest.mark.parametrize("compress_statistics", TRUE_FALSE, ids=id_formatter("compress_statistics"))
+def test_linear4bit_grad_after_cpu_weight_packing(compress_statistics, bias, training):
+    """Linear4bit must still backpropagate after its weight was packed for CPU inference.
+
+    On CPUs with AVX512-BF16 an eval/no_grad forward packs the weight in place. The packed
+    format is inference-only, so a forward that needs gradients has to restore it first.
+    """
+    layer = bnb.nn.Linear4bit(256, 128, bias=bias, compress_statistics=compress_statistics, quant_type="nf4")
+    layer = layer.to("cpu")
+    x = torch.randn(4, 256, requires_grad=True)
+    ref = layer(x)
+    ref.sum().backward()
+    ref_grad, x.grad = x.grad, None
+
+    # Pack the weight the way the CPU inference forward does.
+    w = layer.weight
+    w.data, w.quant_state = bnb.functional._convert_weight_packed_for_cpu(w.data, w.quant_state)
+    with pytest.raises(NotImplementedError):
+        bnb.matmul_4bit(x, w, quant_state=w.quant_state)
+
+    layer.train(training)
+    out = layer(x)
+    out.sum().backward()
+
+    assert not w.quant_state.packing_format_for_cpu
+    torch.testing.assert_close(out, ref, rtol=0.05, atol=0.01)
+    torch.testing.assert_close(x.grad, ref_grad, rtol=0.05, atol=0.01)
+
+
 @pytest.mark.parametrize("device", get_available_devices())
 @pytest.mark.parametrize("quant_type", ["nf4", "fp4"])
 @pytest.mark.parametrize("compute_dtype", [torch.bfloat16, torch.float32], ids=describe_dtype)

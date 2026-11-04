@@ -610,6 +610,13 @@ class Linear4bit(nn.Linear):
         fix_4bit_weight_quant_state_from_module(self)
         quant_state = self.weight.quant_state
 
+        # The CPU packed weight format is inference-only: restore the standard format for training
+        # or when the input needs a gradient.
+        if getattr(quant_state, "packing_format_for_cpu", False) and (
+            self.training or (torch.is_grad_enabled() and x.requires_grad)
+        ):
+            self.weight.data, quant_state = _convert_weight_packed_for_cpu_inverse(self.weight.data, quant_state)
+
         if (
             x.device.type == "cpu"
             and self.support_avx512bf16_for_cpu

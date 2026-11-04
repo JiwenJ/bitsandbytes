@@ -420,6 +420,11 @@ def matmul_4bit(
     # This flag is only set for inference (weight conversion happens at eval time).
     # The underlying kernel supports any M via tiled GEMM despite the gemv name.
     if A.device.type == "cpu" and getattr(quant_state, "packing_format_for_cpu", False):
+        if torch.is_grad_enabled() and A.requires_grad:
+            raise NotImplementedError(
+                "matmul_4bit: weights in the CPU packed format are inference-only and cannot propagate gradients "
+                "to the input; Linear4bit restores the standard format when gradients are needed."
+            )
         result = F.gemv_4bit(A, B, out=out, state=quant_state)
         if bias is not None:
             result += bias
