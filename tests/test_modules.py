@@ -492,3 +492,26 @@ def test_embedding_not_implemented_error():
     with pytest.raises(NotImplementedError):
         emb = bnb.nn.Embedding8bit(32, 32)
         emb.state_dict()
+
+
+def test_outlier_aware_linear_forward(monkeypatch):
+    # Use a fresh OutlierTracer singleton; monkeypatch restores the previous one afterwards.
+    monkeypatch.setattr(bnb.utils.OutlierTracer, "_instance", None)
+
+    class DoubledWeightLinear(bnb.nn.OutlierAwareLinear):
+        def quantize_weight(self, w, outlier_idx):
+            return w * 2
+
+        def forward_with_outliers(self, x, outlier_idx):
+            return torch.nn.functional.linear(x, self.weight, self.bias)
+
+    layer = DoubledWeightLinear(32, 16)
+    expected_weight = layer.weight.detach() * 2
+    bnb.utils.OutlierTracer.get_instance().initialize(layer)
+
+    x = torch.randn(4, 32)
+    out = layer(x)
+
+    assert layer.is_quantized
+    assert layer.outlier_dim is not None
+    torch.testing.assert_close(out, torch.nn.functional.linear(x, expected_weight, layer.bias))

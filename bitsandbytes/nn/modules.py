@@ -1218,3 +1218,5 @@ class OutlierAwareLinear(nn.Linear):
             w = self.quantize_weight(self.weight, self.outlier_dim)
             self.weight.data.copy_(w)
             self.is_quantized = True
+
+        return self.forward_with_outliers(x, self.outlier_dim)
