@@ -97,7 +97,7 @@ __device__ __forceinline__ void mma_store_accum(
             const int n1 = n0 + 1;
 
             // Bias is added in fp32 before the downcast.
-            const float b0 = bias ? static_cast<float>(bias[n0]) : 0.0f;
+            const float b0 = (bias && n0 < N) ? static_cast<float>(bias[n0]) : 0.0f;
             const float b1 = (bias && n1 < N) ? static_cast<float>(bias[n1]) : 0.0f;
 
             if (m0 < M) {
