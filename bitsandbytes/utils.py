@@ -28,9 +28,9 @@ def outlier_hook(module, input):
             # we follow a mixed approach:
             # (1) zscore test of std of hidden dimension
             # (2) magnitude > 6 test
-            merged = input[0].view(-1, input[0].shape[-1])
+            merged = input[0].reshape(-1, input[0].shape[-1])
             # (1) zscore test of std of hidden dimension
-            outlier_idx = find_outlier_dims(merged, reduction_dim=1, zscore=3)
+            outlier_idx = find_outlier_dims(merged, reduction_dim=0, zscore=3)
             # (2) magnitude > 6 test
             dims = (torch.abs(input[0]) > 6).sum(dim=list(range(len(input[0].shape) - 1)))
             outlier_idx2 = torch.where(dims > 0)[0]
@@ -153,13 +153,14 @@ def replace_linear(
                 module.bias is not None,
             )
             if copy_weights:
-                model._modules[name].weight = old_module.weight
-                model._modules[name].bias = old_module.bias
+                model._modules[name].weight.data.copy_(old_module.weight.data)
+                if old_module.bias is not None:
+                    model._modules[name].bias.data.copy_(old_module.bias.data)
 
             if post_processing_function is not None:
-                func = getattr(module, post_processing_function, None)
+                func = getattr(model._modules[name], post_processing_function, None)
                 if func is not None:
-                    func(module)
+                    func()
     return model
 
 

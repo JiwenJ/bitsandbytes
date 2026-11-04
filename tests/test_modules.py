@@ -225,6 +225,53 @@ def test_linear_kbit_fp32_bias(device, module):
         assert l1.bias is None
 
 
+@pytest.mark.parametrize("contiguous", [True, False], ids=id_formatter("contiguous"))
+def test_outlier_tracer_first_layer_hidden_dims(monkeypatch, contiguous):
+    monkeypatch.setattr(bnb.utils.OutlierTracer, "_instance", None)
+    model = nn.Sequential(nn.Linear(32, 16), nn.Linear(16, 8))
+    tracer = bnb.utils.OutlierTracer.get_instance()
+    tracer.initialize(model)
+
+    # Hidden dim 5 has a much larger spread than the others but stays below the magnitude threshold of 6,
+    # so only the zscore test over the hidden dimension can find it.
+    x = torch.rand(8, 4, 32) * 2 - 1
+    x[..., 5] = 4 * torch.randn(8, 4).sign()
+    if not contiguous:
+        x = x.transpose(0, 1)
+
+    model(x)
+
+    assert tracer.get_outliers(model[0].weight).tolist() == [5]
+
+
+@pytest.mark.parametrize(
+    "linear_cls,param_cls",
+    [(bnb.nn.Linear8bitLt, bnb.nn.Int8Params), (bnb.nn.LinearNF4, bnb.nn.Params4bit)],
+    ids=["Int8Lt", "NF4"],
+)
+def test_replace_linear_copy_weights_and_post_processing(linear_cls, param_cls):
+    class PostProcessedLinear(linear_cls):
+        def mark_post_processed(self):
+            self.post_processed = True
+
+    model = nn.Sequential(nn.Linear(32, 64), nn.ReLU(), nn.Sequential(nn.Linear(64, 32, bias=False)))
+    old_layers = [model[0], model[2][0]]
+
+    bnb.utils.replace_linear(
+        model, PostProcessedLinear, copy_weights=True, post_processing_function="mark_post_processed"
+    )
+
+    for old, new in zip(old_layers, [model[0], model[2][0]]):
+        assert isinstance(new, PostProcessedLinear)
+        assert type(new.weight) is param_cls
+        torch.testing.assert_close(new.weight.data, old.weight.data)
+        if old.bias is None:
+            assert new.bias is None
+        else:
+            torch.testing.assert_close(new.bias.data, old.bias.data)
+        assert new.post_processed
+
+
 module_dict = {
     "Int8Lt": bnb.nn.Linear8bitLt,
     "4bit": bnb.nn.Linear4bit,
