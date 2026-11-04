@@ -62,19 +62,25 @@ class Context {
   public:
 #if BNB_HIP
     rocblas_handle m_handle;
+    // A rocBLAS handle is not a hipBLASLt handle, so the int8 matmuls get a hipBLASLt handle of their own.
+    bnb_blasLt_handle_t m_ltHandle = nullptr;
 
     Context() {
         rocblas_handle handle;
         rocblas_create_handle(&handle);
         m_handle = handle;
+        bnb_blasLtCreate(&m_ltHandle);
     }
 #else
     cublasHandle_t m_handle;
+    // A cuBLAS handle can be used as a cuBLASLt handle with a cast.
+    bnb_blasLt_handle_t m_ltHandle;
 
     Context() {
         cublasHandle_t handle;
         cublasCreate_v2(&handle);
         m_handle = handle;
+        m_ltHandle = (bnb_blasLt_handle_t)handle;
     }
 #endif
 };
