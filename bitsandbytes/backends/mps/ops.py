@@ -21,7 +21,7 @@ from ..default.ops import (
     _get_4bit_quantize_bounds,
     _try_torch_compile,
 )
-from ..utils import _get_4bit_code
+from ..utils import _get_4bit_code, _view_packed_4bit_as_storage
 
 _QUANT_MAP = {"fp4": 1, "nf4": 2}
 
@@ -122,10 +122,7 @@ def _quantize_4bit_fallback(
 ) -> tuple[torch.Tensor, torch.Tensor]:
     bounds, order = _get_4bit_quantize_bounds(quant_type, A.device)
     packed, absmax = _quantize_4bit_compute(A.reshape(-1).float(), blocksize, bounds, order, quant_type == "nf4")
-    packed = packed.unsqueeze(1)
-    if quant_storage != torch.uint8:
-        packed = packed.squeeze().view(quant_storage).unsqueeze(1)
-    return packed, absmax
+    return _view_packed_4bit_as_storage(packed, quant_storage), absmax
 
 
 @register_kernel("bitsandbytes::quantize_4bit", "mps")
@@ -137,8 +134,7 @@ def _(
 ) -> tuple[torch.Tensor, torch.Tensor]:
     if blocksize in (64, 128, 256, 512) and (k := _get_kernel()) is not None:
         packed, absmax = k.quantize_4bit(A.contiguous(), blocksize, _QUANT_MAP[quant_type])
-        packed = packed.view(quant_storage).unsqueeze(1)
-        return packed, absmax
+        return _view_packed_4bit_as_storage(packed, quant_storage), absmax
     return _quantize_4bit_fallback(A, blocksize, quant_type, quant_storage)
 
 

@@ -6,7 +6,7 @@ from typing import Optional
 import torch
 
 from ..._ops import register_kernel
-from ..utils import _get_4bit_code
+from ..utils import _get_4bit_code, _view_packed_4bit_as_storage
 
 
 def _try_torch_compile(func=None, **compile_kwargs):
@@ -253,9 +253,7 @@ def _(
     if quant_type != "nf4":
         q = order[q]
     q8 = q.to(torch.uint8)
-    packed = ((q8[::2] << 4) | q8[1::2]).unsqueeze(1)
-    if quant_storage != torch.uint8:
-        packed = packed.squeeze().view(quant_storage).unsqueeze(1)
+    packed = _view_packed_4bit_as_storage((q8[::2] << 4) | q8[1::2], quant_storage)
     return packed, absmax
 
 

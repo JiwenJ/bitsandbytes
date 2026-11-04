@@ -66,6 +66,18 @@ CODE = {"nf4": _NF4_QUANT_TABLE, "fp4": _FP4_QUANT_TABLE}
 _code_4bit_cache: dict[tuple[str, torch.device], torch.Tensor] = {}
 
 
+def _view_packed_4bit_as_storage(packed: torch.Tensor, quant_storage: torch.dtype) -> torch.Tensor:
+    """View ceil(n / 2) packed uint8 bytes as a (-1, 1) tensor of quant_storage, zero-padding the tail
+    to a whole number of quant_storage elements (the size the CUDA backend and the fake allocate)."""
+    packed = packed.reshape(-1)
+    if quant_storage != torch.uint8:
+        pad = -packed.numel() % quant_storage.itemsize
+        if pad:
+            packed = torch.nn.functional.pad(packed, (0, pad))
+        packed = packed.view(quant_storage)
+    return packed.unsqueeze(1)
+
+
 def _get_4bit_code(quant_type: str, device: torch.device) -> torch.Tensor:
     key = (quant_type, device)
     if key not in _code_4bit_cache:

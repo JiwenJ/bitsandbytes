@@ -175,7 +175,8 @@ if not isinstance(lib, ErrorHandlerMockBNBNativeLibrary):
         m = prod(shape[:-1])
         n = shape[-1]
 
-        A = A.reshape(m, n // 2)
+        # Non-uint8 quant_storage can carry trailing padding bytes beyond the m * n / 2 packed values.
+        A = A.reshape(-1)[: m * (n // 2)].reshape(m, n // 2)
         out = torch.empty(shape, dtype=dtype, device=A.device)
 
         if quant_type == "fp4":

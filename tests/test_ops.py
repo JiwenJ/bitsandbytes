@@ -220,6 +220,24 @@ class Test4bitBlockwiseQuantOps:
         )
 
     @pytest.mark.parametrize("device", get_available_devices())
+    @pytest.mark.parametrize("storage_dtype", [torch.bfloat16, torch.float32], ids=id_formatter("storage_dtype"))
+    @pytest.mark.parametrize("numel", [5, 6, 13], ids=id_formatter("numel"))
+    def test_quantize_4bit_storage_partial_element(self, device, storage_dtype, numel):
+        # ceil(numel / 2) packed bytes that do not fill a whole quant_storage element must still fit.
+        A = torch.randn(numel, dtype=torch.float32, device=device)
+        out, absmax = torch.ops.bitsandbytes.quantize_4bit.default(A, 64, "nf4", storage_dtype)
+
+        assert out.dtype == storage_dtype
+        assert out.numel() * storage_dtype.itemsize >= (numel + 1) // 2
+
+        ref_out, ref_absmax = torch.ops.bitsandbytes.quantize_4bit.default(A, 64, "nf4", torch.uint8)
+        deq = torch.ops.bitsandbytes.dequantize_4bit.default(out, absmax, 64, "nf4", A.shape, A.dtype)
+        ref = torch.ops.bitsandbytes.dequantize_4bit.default(ref_out, ref_absmax, 64, "nf4", A.shape, A.dtype)
+        torch.testing.assert_close(deq, ref)
+
+        opcheck(torch.ops.bitsandbytes.quantize_4bit.default, (A, 64, "nf4", storage_dtype))
+
+    @pytest.mark.parametrize("device", get_available_devices())
     @pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16, torch.float32], ids=id_formatter("dtype"))
     @pytest.mark.parametrize("storage_dtype", [torch.uint8, torch.bfloat16], ids=id_formatter("storage_dtype"))
     @pytest.mark.parametrize("quant_type", ["fp4", "nf4"])
