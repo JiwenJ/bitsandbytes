@@ -221,6 +221,27 @@ class Test4bitBlockwiseQuantOps:
 
     @pytest.mark.parametrize("device", get_available_devices())
     @pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16, torch.float32], ids=id_formatter("dtype"))
+    @pytest.mark.parametrize("quant_type", ["fp4", "nf4"])
+    def test_dequantize_4bit_1d(self, device, dtype, quant_type):
+        if device == "hpu" and not is_supported_on_hpu(quant_type, dtype):
+            pytest.skip("This configuration is not supported on HPU.")
+
+        blocksize = 64
+        shape = (1024,)
+        A = torch.randn(shape, dtype=dtype, device=device)
+        packed, absmax = torch.ops.bitsandbytes.quantize_4bit(A, blocksize, quant_type, torch.uint8)
+
+        out = torch.ops.bitsandbytes.dequantize_4bit.default(packed, absmax, blocksize, quant_type, shape, dtype)
+
+        assert out.shape == shape
+        # Same values as dequantizing the data as a 2-D tensor.
+        out_2d = torch.ops.bitsandbytes.dequantize_4bit.default(packed, absmax, blocksize, quant_type, (16, 64), dtype)
+        torch.testing.assert_close(out, out_2d.reshape(shape))
+
+        opcheck(torch.ops.bitsandbytes.dequantize_4bit.default, (packed, absmax, blocksize, quant_type, shape, dtype))
+
+    @pytest.mark.parametrize("device", get_available_devices())
+    @pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16, torch.float32], ids=id_formatter("dtype"))
     @pytest.mark.parametrize("storage_dtype", [torch.uint8, torch.bfloat16], ids=id_formatter("storage_dtype"))
     @pytest.mark.parametrize("quant_type", ["fp4", "nf4"])
     @pytest.mark.parametrize("blocksize", [32, 64, 128, 256, 512])

@@ -169,9 +169,7 @@ if not isinstance(lib, ErrorHandlerMockBNBNativeLibrary):
         if absmax.dtype != torch.float32:
             absmax = absmax.float()
 
-        if len(shape) == 1:
-            shape = (1, shape[0])
-
+        # A 1-D shape is a single row (m == 1); the output keeps the requested shape.
         m = prod(shape[:-1])
         n = shape[-1]
 
