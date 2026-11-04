@@ -260,6 +260,25 @@ class Test4bitBlockwiseQuantOps:
         opcheck(torch.ops.bitsandbytes.gemv_4bit.default, (A, B_q, B.shape, absmax, code, blocksize))
 
     @pytest.mark.parametrize("device", get_available_devices())
+    @pytest.mark.parametrize("quant_type", ["fp4", "nf4"])
+    @pytest.mark.parametrize("in_features", [80, 1000], ids=id_formatter("in_features"))
+    def test_gemv_4bit_unaligned_in_features(self, device, quant_type, in_features):
+        # The CUDA gemv kernel needs in_features to be a multiple of 32; other sizes must still be correct.
+        if device == "cpu" and bitsandbytes.functional.has_avx512bf16():
+            pytest.skip("The AVX512-BF16 CPU kernel expects pre-packed weights")
+
+        blocksize = 64
+        A = torch.randn((1, 1, in_features), dtype=torch.float16, device=device)
+        B = torch.randn((24, in_features), dtype=torch.float16, device=device)
+        B_q, absmax = torch.ops.bitsandbytes.quantize_4bit(B, blocksize, quant_type, torch.uint8)
+        code = bitsandbytes.functional.get_4bit_type(quant_type, device=A.device, blocksize=blocksize)
+
+        out = torch.ops.bitsandbytes.gemv_4bit.default(A, B_q, B.shape, absmax, code, blocksize)
+
+        B_dq = torch.ops.bitsandbytes.dequantize_4bit.default(B_q, absmax, blocksize, quant_type, B.shape, A.dtype)
+        torch.testing.assert_close(out, torch.nn.functional.linear(A, B_dq), rtol=1e-2, atol=1e-2)
+
+    @pytest.mark.parametrize("device", get_available_devices())
     @pytest.mark.parametrize("requires_grad", TRUE_FALSE, ids=id_formatter("requires_grad"))
     @pytest.mark.parametrize("storage_dtype", [torch.uint8, torch.bfloat16], ids=id_formatter("storage_dtype"))
     @pytest.mark.parametrize("has_bias", TRUE_FALSE, ids=id_formatter("has_bias"))

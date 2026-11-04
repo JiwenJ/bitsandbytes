@@ -551,6 +551,14 @@ def _gemv_4bit_impl(
     n = 1
     k = shapeB[1]
 
+    # The naive kernel loads each row of B with 16-byte vectors and uses one absmax per 32 values,
+    # so it requires in_features to be a multiple of 32. Use dequantize + linear otherwise.
+    if k % 32 != 0:
+        quant_type = "fp4" if code[1] > 0 else "nf4"
+        B_dq = torch.ops.bitsandbytes.dequantize_4bit.default(B, absmax, blocksize, quant_type, shapeB, A.dtype)
+        out.copy_(torch.nn.functional.linear(A, B_dq))
+        return
+
     lda = m
     ldb = (A.shape[-1] + 1) // 2
     ldc = m
