@@ -104,19 +104,22 @@ template <typename func_t> inline void parallel_2d(int m, int n, const func_t& f
 #if defined(_OPENMP)
 #pragma omp parallel num_threads(nth)
     {
-        int ith = omp_get_thread_num();
-        int ith_m = ith / nth_n;
-        int ith_n = ith % nth_n;
-
         int thread_block_m = div_up(m, nth_m);
         int thread_block_n = div_up(n, nth_n);
 
-        int begin_m = ith_m * thread_block_m;
-        int end_m = std::min(m, begin_m + thread_block_m);
-        int begin_n = ith_n * thread_block_n;
-        int end_n = std::min(n, begin_n + thread_block_n);
+        // The runtime may start fewer threads than requested (OMP_DYNAMIC, nested parallel
+        // regions, thread limits), so each thread also takes the tiles of the missing ones.
+        for (int ith = omp_get_thread_num(); ith < nth; ith += omp_get_num_threads()) {
+            int ith_m = ith / nth_n;
+            int ith_n = ith % nth_n;
 
-        f(begin_m, end_m, begin_n, end_n);
+            int begin_m = ith_m * thread_block_m;
+            int end_m = std::min(m, begin_m + thread_block_m);
+            int begin_n = ith_n * thread_block_n;
+            int end_n = std::min(n, begin_n + thread_block_n);
+
+            f(begin_m, end_m, begin_n, end_n);
+        }
     }
 #else
     f(0, m, 0, n);
