@@ -1,6 +1,7 @@
 from collections.abc import Sequence
 import math
 
+from packaging import version
 import torch
 
 from ..._ops import register_kernel
@@ -36,7 +37,7 @@ def _(
 
     A = A.reshape(-1)
 
-    if GAUDI_SW_VER and (GAUDI_SW_VER.major < 1 or GAUDI_SW_VER.minor < 22):
+    if GAUDI_SW_VER and GAUDI_SW_VER < version.parse("1.22"):
         A = _reverse_4bit_compress_format(A)
 
     # HPU dequantization function for NF4 quantized tensors.
