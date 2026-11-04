@@ -360,6 +360,11 @@ def _dequantize_blockwise_impl(
 ) -> None:
     A = A.contiguous()
 
+    # The kernel computes the absmax index with a shift by log2(blocksize) and shares one absmax
+    # across the 8 values each thread loads, so blocksize must be a power of two of at least 8.
+    if blocksize < 8 or blocksize & (blocksize - 1):
+        raise ValueError(f"blocksize must be a power of two >= 8 for CUDA dequantize_blockwise, got {blocksize}")
+
     if dtype == torch.float32:
         fn = lib.cdequantize_blockwise_fp32
     elif dtype == torch.float16:
