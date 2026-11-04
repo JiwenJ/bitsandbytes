@@ -84,6 +84,9 @@ __device__ __forceinline__ void mma_store_accum(
     constexpr int ROW_STRIDE = MMA_M_VAL / 2;
     const int group = lane_id / 4;
     const int tid = lane_id % 4;
+    // The packed 32-bit store needs &C[m * N + n0] to be 4-byte aligned. n0 is always even, so
+    // this holds for every row only when N is even; for odd N the two values are stored separately.
+    const bool packed_store = (N % 2) == 0;
 
 #pragma unroll
     for (int wm = 0; wm < WARP_MMA_M; wm++) {
@@ -101,23 +104,29 @@ __device__ __forceinline__ void mma_store_accum(
             const float b1 = (bias && n1 < N) ? static_cast<float>(bias[n1]) : 0.0f;
 
             if (m0 < M) {
-                if (__builtin_expect(n1 < N, 1)) {
+                if (__builtin_expect(packed_store && n1 < N, 1)) {
                     const uint32_t c01 = cvt_f32x2_to_packed<T>(accum[wm][wn].x[1] + b1, accum[wm][wn].x[0] + b0);
                     // clang-format off
                     asm volatile("st.global.cs.b32 [%0], %1;" :: "l"(&C[m0 * N + n0]), "r"(c01));
                     // clang-format on
-                } else if (n0 < N) {
-                    C[m0 * N + n0] = static_cast<T>(accum[wm][wn].x[0] + b0);
+                } else {
+                    if (n0 < N)
+                        C[m0 * N + n0] = static_cast<T>(accum[wm][wn].x[0] + b0);
+                    if (n1 < N)
+                        C[m0 * N + n1] = static_cast<T>(accum[wm][wn].x[1] + b1);
                 }
             }
             if (m1 < M) {
-                if (__builtin_expect(n1 < N, 1)) {
+                if (__builtin_expect(packed_store && n1 < N, 1)) {
                     const uint32_t c23 = cvt_f32x2_to_packed<T>(accum[wm][wn].x[3] + b1, accum[wm][wn].x[2] + b0);
                     // clang-format off
                     asm volatile("st.global.cs.b32 [%0], %1;" :: "l"(&C[m1 * N + n0]), "r"(c23));
                     // clang-format on
-                } else if (n0 < N) {
-                    C[m1 * N + n0] = static_cast<T>(accum[wm][wn].x[2] + b0);
+                } else {
+                    if (n0 < N)
+                        C[m1 * N + n0] = static_cast<T>(accum[wm][wn].x[2] + b0);
+                    if (n1 < N)
+                        C[m1 * N + n1] = static_cast<T>(accum[wm][wn].x[3] + b1);
                 }
             }
         }

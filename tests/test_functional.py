@@ -23,6 +23,7 @@ k = 20
 _GEMM_4BIT_SHAPES = [
     (1, 256, 128),  # SIMT path on all GPUs
     (40, 2048, 128),  # 64x32-128 + sm75 tile
+    (40, 2047, 128),  # odd N: MMA epilogue cannot use packed 32-bit stores
     (9, 5120, 128),  # 32x64-128 on L40S/4090
     (40, 5120, 128),  # 32x64-64 on A10/L40S/4090
     (80, 8192, 128),  # 32x128-64 on L40S/4090
