@@ -246,6 +246,32 @@ def test_params4bit_torch_chunk_split(device, quant_type):
         assert split.quant_type == params4bit.quant_type, "Should preserve quant_type value"
 
 
+@pytest.mark.parametrize("compress_statistics", TRUE_FALSE, ids=id_formatter("compress_statistics"))
+def test_params4bit_to_restores_cpu_packed_weight(compress_statistics):
+    """Moving a CPU packed weight off the CPU with .to() must restore the standard 4-bit format.
+
+    model.to(device) goes through Params4bit.to() rather than .cuda()/.xpu(), which already
+    restore it. The meta device stands in for an accelerator here.
+    """
+    layer = bnb.nn.Linear4bit(256, 128, compress_statistics=compress_statistics, quant_type="nf4").to("cpu")
+    w = layer.weight
+    ref_shape = w.shape
+    ref_absmax_shape, ref_absmax_dtype = w.quant_state.absmax.shape, w.quant_state.absmax.dtype
+
+    # Pack the weight the way the CPU inference forward does.
+    w.data, w.quant_state = bnb.functional._convert_weight_packed_for_cpu(w.data, w.quant_state)
+
+    w = w.to("meta")
+    assert w.device.type == "meta"
+    assert w.shape == ref_shape
+    assert not w.quant_state.packing_format_for_cpu
+    assert w.quant_state.nested == compress_statistics
+    assert w.quant_state.dtype == torch.float32
+    assert w.quant_state.absmax.device.type == "meta"
+    assert w.quant_state.absmax.shape == ref_absmax_shape
+    assert w.quant_state.absmax.dtype == ref_absmax_dtype
+
+
 @pytest.mark.parametrize("device", get_available_devices())
 @pytest.mark.parametrize("quant_type", ["nf4", "fp4"])
 @pytest.mark.parametrize(

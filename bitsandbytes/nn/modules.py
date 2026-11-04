@@ -427,6 +427,14 @@ class Params4bit(torch.nn.Parameter):
         if device is not None and device.type != "meta" and not self.bnb_quantized:
             return self._quantize(device)
         else:
+            # Only the CPU kernels understand the packed format, restore it like cuda()/xpu() do.
+            if (
+                device is not None
+                and device.type != "cpu"
+                and getattr(self.quant_state, "packing_format_for_cpu", False)
+            ):
+                self.data, self.quant_state = _convert_weight_packed_for_cpu_inverse(self.data, self.quant_state)
+
             if self.quant_state is not None:
                 self.quant_state.to(device)
 
