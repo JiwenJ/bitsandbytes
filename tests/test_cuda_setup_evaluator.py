@@ -1,4 +1,5 @@
 from pathlib import Path
+import subprocess
 from unittest.mock import patch
 
 import pytest
@@ -133,3 +134,28 @@ def test_override_invalid_format(monkeypatch, cuda120_spec):
     monkeypatch.setenv("BNB_CUDA_VERSION", "12.4")
     with pytest.raises(RuntimeError, match="digits only"):
         get_cuda_bnb_library_path(cuda120_spec)
+
+
+@pytest.mark.parametrize(
+    "error",
+    [FileNotFoundError("rocminfo"), subprocess.TimeoutExpired("rocminfo", 10)],
+    ids=["missing", "timeout"],
+)
+def test_rocm_gpu_arch_without_rocminfo(monkeypatch, caplog, error):
+    """A missing or hanging rocminfo yields "unknown" without error logs, and the call is bounded by a timeout."""
+    import torch
+
+    from bitsandbytes.cuda_specs import get_rocm_gpu_arch
+
+    calls = []
+
+    def fake_run(*args, **kwargs):
+        calls.append(kwargs)
+        raise error
+
+    monkeypatch.setattr(torch.version, "hip", "7.0.0")
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    with caplog.at_level("WARNING"):
+        assert get_rocm_gpu_arch() == "unknown"
+    assert calls and calls[0].get("timeout")
+    assert not caplog.records

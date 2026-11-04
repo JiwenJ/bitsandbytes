@@ -92,7 +92,7 @@ def get_rocm_gpu_arch() -> str:
                 cmd = ["rocminfo"]
                 arch_pattern = r"Name:\s+gfx([a-zA-Z\d]+)"
 
-            result = subprocess.run(cmd, capture_output=True, text=True)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
             match = re.search(arch_pattern, result.stdout)
             if match:
                 return "gfx" + match.group(1)
@@ -100,6 +100,10 @@ def get_rocm_gpu_arch() -> str:
                 return "unknown"
         else:
             return "unknown"
+    except (FileNotFoundError, subprocess.TimeoutExpired) as e:
+        # The ROCm tools are optional (e.g. a pip-only ROCm torch install), so this is not an error.
+        logger.debug(f"Could not run {cmd[0]} to detect the ROCm GPU architecture: {e}")
+        return "unknown"
     except Exception as e:
         logger.error(f"Could not detect ROCm GPU architecture: {e}")
         if torch.cuda.is_available():
