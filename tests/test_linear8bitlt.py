@@ -250,6 +250,29 @@ def test_linear8bit_load_state_dict_raises_runtime_for_tied_weight():
 
 
 @pytest.mark.parametrize("device", get_available_devices())
+def test_linear8bit_load_state_dict_after_forward(device):
+    # The first forward pass moves SCB from the weight to the MatmulLtState (init_8bit_state),
+    # loading a quantized checkpoint after that must update the state instead of raising.
+    def quantized_linear():
+        linear = Linear8bitLt(32, 96, has_fp16_weights=False)
+        linear.load_state_dict(torch.nn.Linear(32, 96).state_dict())
+        return linear.to(device)
+
+    source = quantized_linear()
+    target = quantized_linear()
+    x = torch.randn(4, 32, dtype=torch.half, device=device)
+
+    target(x)
+    assert target.weight.SCB is None
+    assert target.state.SCB is not None
+
+    target.load_state_dict(source.state_dict())
+
+    torch.testing.assert_close(target.state.SCB, source.weight.SCB)
+    torch.testing.assert_close(target(x), source(x))
+
+
+@pytest.mark.parametrize("device", get_available_devices())
 @pytest.mark.parametrize("threshold", [0.0, 6.0], ids=id_formatter("threshold"))
 @pytest.mark.parametrize("bias", TRUE_FALSE, ids=id_formatter("bias"))
 @pytest.mark.parametrize("fullgraph", TRUE_FALSE, ids=id_formatter("fullgraph"))
