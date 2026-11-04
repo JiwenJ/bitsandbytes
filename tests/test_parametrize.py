@@ -433,6 +433,25 @@ def test_gradient_behavior(device, dtype):
     assert not reconstructed.requires_grad, "Dequantized parameter should not require gradients"
 
 
+@pytest.mark.parametrize("device", ["meta", *get_available_devices(no_cpu=True)])
+@pytest.mark.parametrize("compress_statistics", TRUE_FALSE, ids=id_formatter("compress_statistics"))
+def test_quant_state_follows_module_device(device, compress_statistics):
+    """Test that the quantization state follows the quantized data when the module is moved."""
+    module = ParametrizeTestModule()
+    replace_parameter_4bit(module, "weight_2d", compress_statistics=compress_statistics, quant_type="nf4")
+    quant_state = module.parametrizations.weight_2d[0].quant_state
+
+    # module.to() only moves parametrizations.weight_2d.original, the quantization state is not a buffer
+    module.to(device)
+    reconstructed = module.weight_2d
+
+    assert reconstructed.device.type == device
+    state_tensors = [quant_state.absmax, quant_state.code]
+    if compress_statistics:
+        state_tensors += [quant_state.offset, quant_state.state2.absmax, quant_state.state2.code]
+    assert all(t.device.type == device for t in state_tensors), "Quantization state should follow the module"
+
+
 class TestParametrizationCacheCounterUnderCheckpointing:
     """The cache-gate hooks must stay balanced under activation checkpointing.
 

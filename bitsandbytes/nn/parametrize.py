@@ -36,6 +36,11 @@ class Bnb4bitParametrization(nn.Module):
         Returns:
             `torch.Tensor`: The dequantized parameter tensor in the original shape and dtype.
         """
+        # The quantization state is a plain attribute rather than a buffer, so module.to()/.cuda()/.cpu()
+        # only move the quantized data. Move the state to the data's device lazily (device only, no dtype cast).
+        if self.quant_state.absmax.device != quantized_param.device:
+            self.quant_state.to(quantized_param.device)
+
         return F.dequantize_4bit(quantized_param, self.quant_state)
 
 
