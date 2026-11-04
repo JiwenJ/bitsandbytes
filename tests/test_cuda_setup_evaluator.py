@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 import pytest
 
-from bitsandbytes.cextension import get_cuda_bnb_library_path
+from bitsandbytes.cextension import BNB_BACKEND, ErrorHandlerMockBNBNativeLibrary, get_cuda_bnb_library_path
 from bitsandbytes.consts import DYNAMIC_LIBRARY_SUFFIX
 from bitsandbytes.cuda_specs import CUDASpecs
 
@@ -133,3 +133,12 @@ def test_override_invalid_format(monkeypatch, cuda120_spec):
     monkeypatch.setenv("BNB_CUDA_VERSION", "12.4")
     with pytest.raises(RuntimeError, match="digits only"):
         get_cuda_bnb_library_path(cuda120_spec)
+
+
+def test_missing_binary_reported_as_version_mismatch(monkeypatch):
+    """The error raised for a missing binary must select the version-mismatch explanation."""
+    monkeypatch.setattr("bitsandbytes.cextension.get_available_cuda_binary_versions", lambda: ["12.8"])
+    error = f"No compatible {BNB_BACKEND} binary found at /pkg/libbitsandbytes_cuda999{DYNAMIC_LIBRARY_SUFFIX}"
+    formatted = ErrorHandlerMockBNBNativeLibrary(error).formatted_error
+    assert "VERSION MISMATCH" in formatted
+    assert "12.8" in formatted

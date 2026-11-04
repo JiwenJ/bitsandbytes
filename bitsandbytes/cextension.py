@@ -218,7 +218,7 @@ class ErrorHandlerMockBNBNativeLibrary(BNBNativeLibrary):
         """Format detailed error message for library loading failures"""
         analysis = ""
         no_cpu_lib_found = "libbitsandbytes_cpu.so: cannot open" in original_error
-        no_cuda_lib_found = f"{BNB_BACKEND} binary not found" in original_error
+        no_cuda_lib_found = f"No compatible {BNB_BACKEND} binary found at" in original_error
 
         if no_cpu_lib_found:
             analysis = "\n🚨 Failed to load CPU-only bitsandbytes library 🚨\n\n"
