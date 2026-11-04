@@ -345,6 +345,32 @@ def test_params4bit_real_serialization(device, quant_type, blocksize, compress_s
     assert dict_keys_before == dict_keys_deserialized
 
 
+@pytest.mark.parametrize("compress_statistics", TRUE_FALSE, ids=id_formatter("compress_statistics"))
+def test_linear4bit_state_dict_after_cpu_inference(compress_statistics):
+    """state_dict() after eval inference on CPU must hold the standard 4-bit format.
+
+    On CPUs with AVX512-BF16 the inference forward packs the weight in place for the
+    fused kernel, so saving has to undo the packing, including the absmax layout.
+    """
+    layer = bnb.nn.Linear4bit(256, 128, compress_statistics=compress_statistics, quant_type="nf4")
+    layer.weight = bnb.nn.Params4bit(
+        data=torch.randn(128, 256), requires_grad=False, compress_statistics=compress_statistics, quant_type="nf4"
+    )
+    layer = layer.to("cpu")
+    ref = bnb.functional.dequantize_4bit(layer.weight.data, layer.weight.quant_state)
+
+    layer.eval()
+    with torch.no_grad():
+        layer(torch.randn(4, 256))
+
+    sd = layer.state_dict()
+    sd.pop("bias")
+    weight = bnb.nn.Params4bit.from_prequantized(data=sd.pop("weight"), quantized_stats=sd, device="cpu")
+    out = bnb.functional.dequantize_4bit(weight.data, weight.quant_state)
+    # absmax is stored as bf16 while packed (and quantized again when nested)
+    torch.testing.assert_close(out, ref, rtol=0.03, atol=0)
+
+
 @pytest.mark.parametrize("device", get_available_devices())
 @pytest.mark.parametrize("quant_type", ["nf4", "fp4"])
 @pytest.mark.parametrize("compute_dtype", [torch.bfloat16, torch.float32], ids=describe_dtype)

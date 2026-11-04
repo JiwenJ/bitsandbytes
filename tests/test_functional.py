@@ -694,6 +694,36 @@ class TestQuantize4BitFunctional:
             assert err.item() < 0.11
             assert relerr.item() < 0.28
 
+    @pytest.mark.parametrize("quant_storage", [torch.uint8, torch.bfloat16], ids=describe_dtype)
+    @pytest.mark.parametrize("compress_statistics", TRUE_FALSE, ids=id_formatter("compress_statistics"))
+    @pytest.mark.parametrize("dtype", [torch.float32, torch.float16, torch.bfloat16], ids=describe_dtype)
+    def test_convert_weight_packed_for_cpu_inverse(self, dtype, compress_statistics, quant_storage):
+        A = torch.randn(128, 256, dtype=dtype)
+        qA, state = F.quantize_4bit(
+            A, blocksize=64, compress_statistics=compress_statistics, quant_type="nf4", quant_storage=quant_storage
+        )
+        # The conversion modifies the state in place, so keep what we compare against.
+        ref_qA = qA.clone()
+        ref_absmax_dtype, ref_absmax_shape = state.absmax.dtype, state.absmax.shape
+        ref_nested_dtype = state.state2.dtype if compress_statistics else None
+        ref_out = F.dequantize_4bit(qA, state)
+
+        packed, state = F._convert_weight_packed_for_cpu(qA, state)
+        qA2, state = F._convert_weight_packed_for_cpu_inverse(packed, state)
+
+        assert not state.packing_format_for_cpu
+        assert state.nested == compress_statistics
+        assert state.dtype == dtype
+        assert qA2.dtype == quant_storage
+        assert qA2.shape == ref_qA.shape
+        assert torch.equal(qA2.view(torch.uint8), ref_qA.view(torch.uint8))
+        assert state.absmax.dtype == ref_absmax_dtype
+        assert state.absmax.shape == ref_absmax_shape
+        if compress_statistics:
+            assert state.state2.dtype == ref_nested_dtype
+        # absmax is stored as bf16 while packed (and quantized again when nested)
+        torch.testing.assert_close(F.dequantize_4bit(qA2, state), ref_out, rtol=0.03, atol=0)
+
     @pytest.mark.parametrize("device", get_available_devices(no_cpu=True))
     @pytest.mark.skipif(not get_available_devices(no_cpu=True), reason="No accelerator device")
     @pytest.mark.parametrize("dtype", [torch.float32, torch.float16, torch.bfloat16], ids=describe_dtype)

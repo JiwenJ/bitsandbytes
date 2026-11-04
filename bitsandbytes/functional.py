@@ -1776,15 +1776,17 @@ def _convert_weight_packed_for_cpu_inverse(
     recovered_state = quant_state
     qweight = qweight.to(torch.uint8).reshape(recovered_state.original_qshape)
 
-    # quantize absmax
+    # absmax: bf16 [K/blocksize, N] -> float32 [N * K/blocksize], then quantize it again if it was nested
+    absmax = recovered_state.absmax.T.reshape(-1).float()
     if recovered_state.original_nested:
-        absmax = recovered_state.absmax.T.reshape(-1).to(recovered_state.original_dtype)
         offset = absmax.mean()
         qabsmax, state2 = quantize_blockwise(absmax - offset, blocksize=256)
         recovered_state.absmax = qabsmax
         recovered_state.offset = offset
         recovered_state.state2 = state2
         recovered_state.nested = True
+    else:
+        recovered_state.absmax = absmax
 
     recovered_state.dtype = recovered_state.original_dtype
     recovered_state.packing_format_for_cpu = False
