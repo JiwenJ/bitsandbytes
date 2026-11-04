@@ -41,39 +41,48 @@ using std::endl;
 
 template <typename T, int STOCHASTIC, int DATA_TYPE>
 void quantizeBlockwise(
-    float* code, T* A, float* absmax, unsigned char* out, float* rand, int rand_offset, int blocksize, const int n
+    float* code, T* A, float* absmax, unsigned char* out, float* rand, int rand_offset, int blocksize, const int n,
+    bnb_stream_t stream
 ) {
     int num_blocks = n / blocksize;
     num_blocks = n % blocksize == 0 ? num_blocks : num_blocks + 1;
 
     if (blocksize == 4096)
         kQuantizeBlockwise<T, 4096, 4, STOCHASTIC, DATA_TYPE>
-            <<<num_blocks, 1024>>>(code, A, absmax, out, rand, rand_offset, n);
+            <<<num_blocks, 1024, 0, stream>>>(code, A, absmax, out, rand, rand_offset, n);
     else if (blocksize == 2048)
-        kQuantizeBlockwise<T, 2048, 4, 0, DATA_TYPE><<<num_blocks, 512>>>(code, A, absmax, out, rand, rand_offset, n);
+        kQuantizeBlockwise<T, 2048, 4, 0, DATA_TYPE>
+            <<<num_blocks, 512, 0, stream>>>(code, A, absmax, out, rand, rand_offset, n);
     else if (blocksize == 1024)
-        kQuantizeBlockwise<T, 1024, 4, 0, DATA_TYPE><<<num_blocks, 256>>>(code, A, absmax, out, rand, rand_offset, n);
+        kQuantizeBlockwise<T, 1024, 4, 0, DATA_TYPE>
+            <<<num_blocks, 256, 0, stream>>>(code, A, absmax, out, rand, rand_offset, n);
     else if (blocksize == 512)
-        kQuantizeBlockwise<T, 512, 2, 0, DATA_TYPE><<<num_blocks, 256>>>(code, A, absmax, out, rand, rand_offset, n);
+        kQuantizeBlockwise<T, 512, 2, 0, DATA_TYPE>
+            <<<num_blocks, 256, 0, stream>>>(code, A, absmax, out, rand, rand_offset, n);
     else if (blocksize == 256)
-        kQuantizeBlockwise<T, 256, 2, 0, DATA_TYPE><<<num_blocks, 128>>>(code, A, absmax, out, rand, rand_offset, n);
+        kQuantizeBlockwise<T, 256, 2, 0, DATA_TYPE>
+            <<<num_blocks, 128, 0, stream>>>(code, A, absmax, out, rand, rand_offset, n);
     else if (blocksize == 128)
-        kQuantizeBlockwise<T, 128, 2, 0, DATA_TYPE><<<num_blocks, 64>>>(code, A, absmax, out, rand, rand_offset, n);
+        kQuantizeBlockwise<T, 128, 2, 0, DATA_TYPE>
+            <<<num_blocks, 64, 0, stream>>>(code, A, absmax, out, rand, rand_offset, n);
     else if (blocksize == 64) {
         if constexpr (DATA_TYPE > 0) {
             const int ws = bnb_host_warp_size();
             const int num_qb = ws / (64 / 2);
             int grid = (num_blocks + num_qb - 1) / num_qb;
-            kQuantizeBlockwiseSmall<T, 64, DATA_TYPE><<<grid, ws>>>(code, A, absmax, out, rand, rand_offset, n);
+            kQuantizeBlockwiseSmall<T, 64, DATA_TYPE>
+                <<<grid, ws, 0, stream>>>(code, A, absmax, out, rand, rand_offset, n);
         } else {
-            kQuantizeBlockwise<T, 64, 2, 0, DATA_TYPE><<<num_blocks, 32>>>(code, A, absmax, out, rand, rand_offset, n);
+            kQuantizeBlockwise<T, 64, 2, 0, DATA_TYPE>
+                <<<num_blocks, 32, 0, stream>>>(code, A, absmax, out, rand, rand_offset, n);
         }
     } else if (blocksize == 32) {
         if constexpr (DATA_TYPE > 0) {
             const int ws = bnb_host_warp_size();
             const int num_qb = ws / (32 / 2);
             int grid = (num_blocks + num_qb - 1) / num_qb;
-            kQuantizeBlockwiseSmall<T, 32, DATA_TYPE><<<grid, ws>>>(code, A, absmax, out, rand, rand_offset, n);
+            kQuantizeBlockwiseSmall<T, 32, DATA_TYPE>
+                <<<grid, ws, 0, stream>>>(code, A, absmax, out, rand, rand_offset, n);
         }
     }
 
@@ -103,7 +112,7 @@ template <typename T, int OPTIMIZER>
 void optimizer32bit(
     T* g, T* p, float* state1, float* state2, float* unorm, float max_unorm, float param_norm, const float beta1,
     const float beta2, const float beta3, const float alpha, const float eps, const float weight_decay, const int step,
-    const float lr, const float gnorm_scale, bool skip_zeros, const int n
+    const float lr, const float gnorm_scale, bool skip_zeros, const int n, bnb_stream_t stream
 ) {
     int num_blocks = n / 4096;
     num_blocks = n % 4096 == 0 ? num_blocks : num_blocks + 1;
@@ -111,13 +120,13 @@ void optimizer32bit(
     case ADAM:
     case ADEMAMIX:
         if (max_unorm > 0.0f) {
-            BNB_CHECK_RETURN(BNB_DEVICE_MEMSET(unorm, 0, 1 * sizeof(float)));
-            kPreconditionOptimizer32bit2State<T, OPTIMIZER, 4096, 8><<<num_blocks, 512>>>(
+            BNB_CHECK_RETURN(BNB_DEVICE_MEMSET_ASYNC(unorm, 0, 1 * sizeof(float), stream));
+            kPreconditionOptimizer32bit2State<T, OPTIMIZER, 4096, 8><<<num_blocks, 512, 0, stream>>>(
                 g, p, state1, state2, unorm, beta1, beta2, eps, weight_decay, step, lr, gnorm_scale, n
             );
             BNB_CHECK_RETURN(BNB_PEEK_LAST_ERROR());
         }
-        kOptimizer32bit2State<T, OPTIMIZER><<<num_blocks, 1024>>>(
+        kOptimizer32bit2State<T, OPTIMIZER><<<num_blocks, 1024, 0, stream>>>(
             g, p, state1, state2, unorm, max_unorm, param_norm, beta1, beta2, beta3, alpha, eps, weight_decay, step, lr,
             gnorm_scale, skip_zeros, n
         );
@@ -127,13 +136,14 @@ void optimizer32bit(
     case RMSPROP:
     case ADAGRAD:
         if (max_unorm > 0.0f) {
-            BNB_CHECK_RETURN(BNB_DEVICE_MEMSET(unorm, 0, 1 * sizeof(float)));
-            kPreconditionOptimizer32bit1State<T, OPTIMIZER, 4096, 8>
-                <<<num_blocks, 512>>>(g, p, state1, unorm, beta1, beta2, eps, weight_decay, step, lr, gnorm_scale, n);
+            BNB_CHECK_RETURN(BNB_DEVICE_MEMSET_ASYNC(unorm, 0, 1 * sizeof(float), stream));
+            kPreconditionOptimizer32bit1State<T, OPTIMIZER, 4096, 8><<<num_blocks, 512, 0, stream>>>(
+                g, p, state1, unorm, beta1, beta2, eps, weight_decay, step, lr, gnorm_scale, n
+            );
             BNB_CHECK_RETURN(BNB_PEEK_LAST_ERROR());
         }
 
-        kOptimizer32bit1State<T, OPTIMIZER><<<num_blocks, 1024>>>(
+        kOptimizer32bit1State<T, OPTIMIZER><<<num_blocks, 1024, 0, stream>>>(
             g, p, state1, unorm, max_unorm, param_norm, beta1, beta2, eps, weight_decay, step, lr, gnorm_scale,
             skip_zeros, n
         );
@@ -141,16 +151,17 @@ void optimizer32bit(
         break;
     case LION:
         // in lion, the momentum update after the parameter update
-        kOptimizer32bit1State<T, OPTIMIZER><<<num_blocks, 1024>>>(
+        kOptimizer32bit1State<T, OPTIMIZER><<<num_blocks, 1024, 0, stream>>>(
             g, p, state1, unorm, max_unorm, param_norm, beta1, beta2, eps, weight_decay, step, lr, gnorm_scale,
             skip_zeros, n
         );
         BNB_CHECK_RETURN(BNB_PEEK_LAST_ERROR());
 
         if (max_unorm > 0.0f) {
-            BNB_CHECK_RETURN(BNB_DEVICE_MEMSET(unorm, 0, 1 * sizeof(float)));
-            kPreconditionOptimizer32bit1State<T, OPTIMIZER, 4096, 8>
-                <<<num_blocks, 512>>>(g, p, state1, unorm, beta1, beta2, eps, weight_decay, step, lr, gnorm_scale, n);
+            BNB_CHECK_RETURN(BNB_DEVICE_MEMSET_ASYNC(unorm, 0, 1 * sizeof(float), stream));
+            kPreconditionOptimizer32bit1State<T, OPTIMIZER, 4096, 8><<<num_blocks, 512, 0, stream>>>(
+                g, p, state1, unorm, beta1, beta2, eps, weight_decay, step, lr, gnorm_scale, n
+            );
             BNB_CHECK_RETURN(BNB_PEEK_LAST_ERROR());
         }
         break;
@@ -166,7 +177,7 @@ template <typename T, int OPTIMIZER>
 void optimizerStatic8bitBlockwise(
     T* p, T* g, unsigned char* state1, unsigned char* state2, float beta1, float beta2, float beta3, float alpha,
     float eps, int step, float lr, float* quantiles1, float* quantiles2, float* absmax1, float* absmax2,
-    float weight_decay, const float gnorm_scale, bool skip_zeros, int n
+    float weight_decay, const float gnorm_scale, bool skip_zeros, int n, bnb_stream_t stream
 ) {
 
     int num_blocks = 0;
@@ -176,7 +187,7 @@ void optimizerStatic8bitBlockwise(
         num_blocks = n / BLOCKSIZE_2STATE;
         num_blocks = n % BLOCKSIZE_2STATE == 0 ? num_blocks : num_blocks + 1;
         kOptimizerStatic8bit2StateBlockwise<T, OPTIMIZER, BLOCKSIZE_2STATE, NUM_2STATE>
-            <<<num_blocks, BLOCKSIZE_2STATE / NUM_2STATE>>>(
+            <<<num_blocks, BLOCKSIZE_2STATE / NUM_2STATE, 0, stream>>>(
                 p, g, state1, state2, beta1, beta2, beta3, alpha, eps, step, lr, quantiles1, quantiles2, absmax1,
                 absmax2, weight_decay, gnorm_scale, skip_zeros, n
             );
@@ -189,7 +200,7 @@ void optimizerStatic8bitBlockwise(
         num_blocks = n / BLOCKSIZE_1STATE;
         num_blocks = n % BLOCKSIZE_1STATE == 0 ? num_blocks : num_blocks + 1;
         kOptimizerStatic8bit1StateBlockwise<T, OPTIMIZER, BLOCKSIZE_1STATE, NUM_1STATE>
-            <<<num_blocks, BLOCKSIZE_1STATE / NUM_1STATE>>>(
+            <<<num_blocks, BLOCKSIZE_1STATE / NUM_1STATE, 0, stream>>>(
                 p, g, state1, beta1, beta2, eps, step, lr, quantiles1, absmax1, weight_decay, gnorm_scale, skip_zeros, n
             );
         BNB_CHECK_RETURN(BNB_PEEK_LAST_ERROR());
@@ -583,44 +594,52 @@ template int igemmlt<8, 1>(
 );
 
 template void quantizeBlockwise<half, 1, General8bit>(
-    float* code, half* A, float* absmax, unsigned char* out, float* rand, int rand_offset, int blocksize, const int n
+    float* code, half* A, float* absmax, unsigned char* out, float* rand, int rand_offset, int blocksize, const int n,
+    bnb_stream_t stream
 );
 template void quantizeBlockwise<half, 0, General8bit>(
-    float* code, half* A, float* absmax, unsigned char* out, float* rand, int rand_offset, int blocksize, const int n
+    float* code, half* A, float* absmax, unsigned char* out, float* rand, int rand_offset, int blocksize, const int n,
+    bnb_stream_t stream
 );
 template void quantizeBlockwise<half, 0, FP4>(
-    float* code, half* A, float* absmax, unsigned char* out, float* rand, int rand_offset, int blocksize, const int n
+    float* code, half* A, float* absmax, unsigned char* out, float* rand, int rand_offset, int blocksize, const int n,
+    bnb_stream_t stream
 );
 template void quantizeBlockwise<half, 0, NF4>(
-    float* code, half* A, float* absmax, unsigned char* out, float* rand, int rand_offset, int blocksize, const int n
+    float* code, half* A, float* absmax, unsigned char* out, float* rand, int rand_offset, int blocksize, const int n,
+    bnb_stream_t stream
 );
 template void quantizeBlockwise<float, 1, General8bit>(
-    float* code, float* A, float* absmax, unsigned char* out, float* rand, int rand_offset, int blocksize, const int n
+    float* code, float* A, float* absmax, unsigned char* out, float* rand, int rand_offset, int blocksize, const int n,
+    bnb_stream_t stream
 );
 template void quantizeBlockwise<float, 0, General8bit>(
-    float* code, float* A, float* absmax, unsigned char* out, float* rand, int rand_offset, int blocksize, const int n
+    float* code, float* A, float* absmax, unsigned char* out, float* rand, int rand_offset, int blocksize, const int n,
+    bnb_stream_t stream
 );
 template void quantizeBlockwise<float, 0, FP4>(
-    float* code, float* A, float* absmax, unsigned char* out, float* rand, int rand_offset, int blocksize, const int n
+    float* code, float* A, float* absmax, unsigned char* out, float* rand, int rand_offset, int blocksize, const int n,
+    bnb_stream_t stream
 );
 template void quantizeBlockwise<float, 0, NF4>(
-    float* code, float* A, float* absmax, unsigned char* out, float* rand, int rand_offset, int blocksize, const int n
+    float* code, float* A, float* absmax, unsigned char* out, float* rand, int rand_offset, int blocksize, const int n,
+    bnb_stream_t stream
 );
 template void quantizeBlockwise<bnb_bfloat16, 1, General8bit>(
     float* code, bnb_bfloat16* A, float* absmax, unsigned char* out, float* rand, int rand_offset, int blocksize,
-    const int n
+    const int n, bnb_stream_t stream
 );
 template void quantizeBlockwise<bnb_bfloat16, 0, General8bit>(
     float* code, bnb_bfloat16* A, float* absmax, unsigned char* out, float* rand, int rand_offset, int blocksize,
-    const int n
+    const int n, bnb_stream_t stream
 );
 template void quantizeBlockwise<bnb_bfloat16, 0, FP4>(
     float* code, bnb_bfloat16* A, float* absmax, unsigned char* out, float* rand, int rand_offset, int blocksize,
-    const int n
+    const int n, bnb_stream_t stream
 );
 template void quantizeBlockwise<bnb_bfloat16, 0, NF4>(
     float* code, bnb_bfloat16* A, float* absmax, unsigned char* out, float* rand, int rand_offset, int blocksize,
-    const int n
+    const int n, bnb_stream_t stream
 );
 
 template void dequantizeBlockwise<float, General8bit>(
@@ -656,7 +675,7 @@ template void dequantizeBlockwise<bnb_bfloat16, NF4>(
         gtype * g, gtype * p, float* state1, float* state2, float* unorm, float max_unorm, float param_norm,           \
         const float beta1, const float beta2, const float beta3, const float alpha, const float eps,                   \
         const float weight_decay, const int step, const float lr, const float gnorm_scale, const bool skip_zeros,      \
-        const int n                                                                                                    \
+        const int n, bnb_stream_t stream                                                                               \
     );
 
 MAKE_optimizer32bit(ADAM, half) MAKE_optimizer32bit(ADAM, float) MAKE_optimizer32bit(ADAM, bnb_bfloat16) MAKE_optimizer32bit(MOMENTUM, half) MAKE_optimizer32bit(MOMENTUM, float) MAKE_optimizer32bit(MOMENTUM, bnb_bfloat16) MAKE_optimizer32bit(RMSPROP, half) MAKE_optimizer32bit(RMSPROP, float) MAKE_optimizer32bit(RMSPROP, bnb_bfloat16) MAKE_optimizer32bit(
@@ -667,7 +686,7 @@ MAKE_optimizer32bit(ADAM, half) MAKE_optimizer32bit(ADAM, float) MAKE_optimizer3
     template void optimizerStatic8bitBlockwise<gtype, optim_name>(                                                     \
         gtype * p, gtype * g, unsigned char* state1, unsigned char* state2, float beta1, float beta2, float beta3,     \
         float alpha, float eps, int step, float lr, float* quantiles1, float* quantiles2, float* absmax1,              \
-        float* absmax2, float weight_decay, const float gnorm_scale, bool skip_zeros, int n                            \
+        float* absmax2, float weight_decay, const float gnorm_scale, bool skip_zeros, int n, bnb_stream_t stream       \
     );
 
     MAKE_optimizerStatic8bitBlockwise(half, ADAM);

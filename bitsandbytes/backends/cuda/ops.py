@@ -58,11 +58,11 @@ _setup_ctypes(
     [ct.c_void_p] * 3 + [ct.c_float, ct.c_int32, ct.c_int32, ct.c_void_p],
 )
 
-# 4-bit/8-bit blockwise quantize: (code, A, absmax, out, blocksize, n)
+# 4-bit/8-bit blockwise quantize: (code, A, absmax, out, blocksize, n, stream)
 _setup_ctypes(
     [f"cquantize_blockwise_{d}_{q}" for d in ("fp32", "bf16", "fp16") for q in ("nf4", "fp4")]
     + [f"cquantize_blockwise_{d}" for d in ("fp32", "bf16", "fp16")],
-    [ct.c_void_p] * 4 + [ct.c_int32, ct.c_int32],
+    [ct.c_void_p] * 4 + [ct.c_int32, ct.c_int32, ct.c_void_p],
 )
 
 
@@ -327,6 +327,7 @@ def _(A: torch.Tensor, code: torch.Tensor, blocksize: int) -> tuple[torch.Tensor
             out.data_ptr(),
             blocksize,
             n,
+            _get_raw_stream(A.device.index),
         )
 
     return out, absmax
@@ -415,6 +416,7 @@ def _(
             out.data_ptr(),
             blocksize,
             n,
+            _get_raw_stream(A.device.index),
         )
 
     return out, absmax
@@ -1112,6 +1114,7 @@ def _optimizer_update_32bit_impl(
             ct.c_float(gnorm_scale),
             ct.c_bool(skip_zeros),
             ct.c_int32(g.numel()),
+            ct.c_void_p(_get_raw_stream(g.device.index)),
         )
 
 
@@ -1205,6 +1208,7 @@ def _optimizer_update_8bit_blockwise_impl(
             ct.c_float(gnorm_scale),
             ct.c_bool(skip_zeros),
             ct.c_int32(g.numel()),
+            ct.c_void_p(_get_raw_stream(g.device.index)),
         )
 
 
