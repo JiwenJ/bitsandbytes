@@ -492,3 +492,11 @@ def test_embedding_not_implemented_error():
     with pytest.raises(NotImplementedError):
         emb = bnb.nn.Embedding8bit(32, 32)
         emb.state_dict()
+
+
+def test_embedding8bit_not_quantized_error():
+    emb = bnb.nn.Embedding8bit(32, 32)
+    input_tokens = torch.randint(low=0, high=32, size=(4,))
+
+    with pytest.raises(RuntimeError, match="not quantized"):
+        emb(input_tokens)

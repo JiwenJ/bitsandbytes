@@ -860,7 +860,7 @@ class Embedding8bit(nn.Embedding):
         raise NotImplementedError("Saving Embedding8bit module is not implemented")
 
     def forward(self, input: Tensor) -> Tensor:
-        if not hasattr(self.weight, "SCB"):
+        if getattr(self.weight, "SCB", None) is None:
             raise RuntimeError("Embedding layer is not quantized. Please call .cuda() or .to(device) first.")
 
         rows = self.weight.data
