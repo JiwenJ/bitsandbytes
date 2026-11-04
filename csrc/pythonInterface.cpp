@@ -21,6 +21,8 @@
 #define cublasLtHandle_t hipblasLtHandle_t
 #define cudaMallocManaged hipMallocManaged
 #define cudaMemAttachHost hipMemAttachHost
+#define cudaMemAttachGlobal hipMemAttachGlobal
+#define cudaGetDevice hipGetDevice
 #define cudaPeekAtLastError hipPeekAtLastError
 #define cudaDeviceGetAttribute hipDeviceGetAttribute
 #define cudaDevAttrConcurrentManagedAccess hipDeviceAttributeConcurrentManagedAccess
@@ -556,7 +558,12 @@ void cint8_vector_quant(
 
 void* cget_managed_ptr(size_t bytes) {
     void* ptr;
-    CUDA_CHECK_RETURN(cudaMallocManaged(&ptr, bytes, cudaMemAttachHost));
+    // Kernels on devices without concurrent managed access (e.g. on Windows) may not access memory attached to the
+    // host, and the first kernel (fill) runs before any cprefetch, so attach the memory globally on those devices.
+    int device, hasConcurrentAccess;
+    CUDA_CHECK_RETURN(cudaGetDevice(&device));
+    CUDA_CHECK_RETURN(cudaDeviceGetAttribute(&hasConcurrentAccess, cudaDevAttrConcurrentManagedAccess, device));
+    CUDA_CHECK_RETURN(cudaMallocManaged(&ptr, bytes, hasConcurrentAccess ? cudaMemAttachHost : cudaMemAttachGlobal));
     CUDA_CHECK_RETURN(cudaPeekAtLastError());
 
     return ptr;
